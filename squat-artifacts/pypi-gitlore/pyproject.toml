@@ -1,0 +1,36 @@
+[build-system]
+requires = ["hatchling>=1.21"]
+build-backend = "hatchling.build"
+
+[project]
+name = "gitlore"
+version = "0.0.1"
+description = "gitlore — a terminal utility for Git history intelligence. Reserved; real release coming. See github.com/amit-t/gitlore."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT OR Apache-2.0" }
+authors = [
+  { name = "Amit Tiwari", email = "tiwari.m.amit@gmail.com" },
+]
+keywords = ["git", "history", "cli", "placeholder"]
+classifiers = [
+  "Development Status :: 1 - Planning",
+  "Environment :: Console",
+  "Intended Audience :: Developers",
+  "License :: OSI Approved :: MIT License",
+  "License :: OSI Approved :: Apache Software License",
+  "Operating System :: OS Independent",
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Version Control :: Git",
+]
+
+[project.urls]
+Homepage = "https://github.com/amit-t/gitlore"
+Repository = "https://github.com/amit-t/gitlore"
+Issues = "https://github.com/amit-t/gitlore/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/gitlore"]
+
+[tool.hatch.build.targets.sdist]
+include = ["src/gitlore", "README.md", "pyproject.toml"]

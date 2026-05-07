@@ -1,0 +1,17 @@
+[package]
+name = "gitlore"
+version = "0.0.1"
+edition = "2021"
+rust-version = "1.74"
+description = "gitlore — a terminal utility for Git history intelligence. Reserved; real release coming. See github.com/amit-t/gitlore."
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/amit-t/gitlore"
+homepage = "https://github.com/amit-t/gitlore"
+documentation = "https://github.com/amit-t/gitlore"
+readme = "README.md"
+authors = ["Amit Tiwari <tiwari.m.amit@gmail.com>"]
+keywords = ["git", "history", "cli"]
+categories = ["command-line-utilities", "development-tools"]
+
+[lib]
+path = "src/lib.rs"
