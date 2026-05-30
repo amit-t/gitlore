@@ -1,0 +1,29 @@
+[package]
+name = "gitlore-eval"
+version = "0.0.0"
+edition = "2021"
+rust-version = "1.74"
+description = "Evaluation harness for gitlore: scenarios, fixtures, and metrics for search / story / risk."
+license = "MIT OR Apache-2.0"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "gitlore-eval"
+path = "src/bin/main.rs"
+
+[features]
+default = []
+# Gates private-fixture scenarios. Enabled only on the self-hosted lane (Q6a).
+eval-private = []
+
+[dependencies]
+gitlore-core = { path = "../gitlore-core" }
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+criterion = "0.5"
