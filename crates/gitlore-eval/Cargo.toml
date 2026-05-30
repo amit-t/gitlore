@@ -1,0 +1,16 @@
+[package]
+name = "gitlore-eval"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Internal evaluation harness for gitlore search / story / risk quality. Not published."
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
