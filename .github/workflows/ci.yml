@@ -1,0 +1,142 @@
+# gitlore CI
+#
+# Public lane (this repo, GitHub-hosted runners):
+#   - fmt-check, clippy, test, ro-filesystem-integration
+#   - matrix: macos-latest + ubuntu-latest x stable Rust 1.75
+#
+# Private lane (self-hosted, gitlore-private runner pool) per ADR-028:
+#   - eval-regression: stub at M1, lights up at M4 with
+#     `gitlore-eval --regression --baseline=origin/main`.
+#   - Gated on PR label `tier:judgement` so it only runs when a reviewer
+#     opts a PR into eval-grade scrutiny.
+#
+# Read-only contract is enforced by the dedicated `ro-filesystem-integration`
+# job (see unified spec §22 row 14). This job is required to stay green on
+# every public PR.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  RUSTFLAGS: "-D warnings"
+  RUST_TOOLCHAIN: "1.75"
+
+jobs:
+  fmt-check:
+    name: fmt-check (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: ["1.75"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt
+      - name: cargo fmt --check
+        run: cargo fmt --all -- --check
+
+  clippy:
+    name: clippy (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: ["1.75"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: clippy
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: clippy-${{ matrix.os }}-${{ matrix.rust }}
+      - name: cargo clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+  test:
+    name: test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: ["1.75"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: test-${{ matrix.os }}-${{ matrix.rust }}
+      - name: cargo test --workspace
+        run: cargo test --workspace --locked
+
+  ro-filesystem-integration:
+    # Enforces the gitlore read-only contract (spec §22, row 14).
+    # The test target lives at `tests/ro_filesystem.rs` in the crate that
+    # owns the Git layer; it sandboxes the process and asserts no write
+    # syscalls escape the allowed paths.
+    name: ro-filesystem-integration (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: ["1.75"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: ro-fs-${{ matrix.os }}-${{ matrix.rust }}
+      - name: cargo test --test ro_filesystem
+        run: cargo test --workspace --test ro_filesystem --locked
+
+  eval-regression:
+    # Private lane per ADR-028.
+    # Only runs on PRs explicitly labeled `tier:judgement` by a reviewer,
+    # and only on the self-hosted gitlore-private runner pool. The job is
+    # a deliberate stub at M1 (walking skeleton). It lights up at M4 when
+    # the labeled eval set lands and the `gitlore-eval` binary exists.
+    name: eval-regression (self-hosted, gitlore-private)
+    if: >-
+      github.event_name == 'pull_request' &&
+      contains(github.event.pull_request.labels.*.name, 'tier:judgement')
+    runs-on: [self-hosted, gitlore-private]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Stub — eval regression (M1)
+        run: |
+          echo "eval-regression stub: this job is a placeholder until M4."
+          echo "At M4 the step body becomes:"
+          echo "  gitlore-eval --regression --baseline=origin/main"
+          echo "See ADR-028 and unified spec §20 (M4) for the full contract."
