@@ -1,0 +1,16 @@
+[workspace]
+resolver = "2"
+members = ["crates/gitlore-eval"]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.74"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/amit-t/gitlore"
+authors = ["Amit Tiwari <tiwari.m.amit@gmail.com>"]
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
