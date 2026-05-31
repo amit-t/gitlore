@@ -58,6 +58,8 @@ git2 = { version = "0.19", optional = true, default-features = false }
 [dev-dependencies]
 # Required by tests/workspace_layering.rs (ADR-005 enforcement).
 cargo_metadata = "0.18"
+# Required by config + log tests (tempdir fixtures).
+tempfile = "3"
 
 # -----------------------------------------------------------------------------
 # Features
