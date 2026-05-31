@@ -1,0 +1,58 @@
+# CODEOWNERS — gitlore
+#
+# Source of truth for review routing on PRs. Note that gitlore is a solo
+# project (Amit, sole maintainer) so the practical effect of CODEOWNERS is
+# narrow: it pins **eval-grade artifacts** so they cannot be silently rewritten
+# by an automated PR (ralph, dependabot, or a future contributor) without an
+# explicit review from the data steward.
+#
+# Branch-protection ties this together via `tier:judgement`: any PR that
+# touches a CODEOWNERS-pinned path is expected to carry the `tier:judgement`
+# label, which forces green private CI + 1 approving review (see
+# `docs/branch-protection.md` and ADR-028). The label is reviewer-applied, not
+# automatic; CODEOWNERS surfaces the review request, branch-protection
+# enforces the merge gate.
+#
+# Format: GitHub native CODEOWNERS. Last-matching rule wins per path.
+# Reference: https://docs.github.com/articles/about-code-owners
+#
+# References:
+# - Open Question Q3 (fixture protection): the labeled eval set and the
+#   risk/story labeled commit sets are the empirical foundation for M4/M8
+#   acceptance gates. They must not drift without a deliberate review.
+# - Spec §20 M4 (labeled eval set blocks M4) and §20 M8 (spicy/boring set
+#   blocks M8).
+# - ADR-028 (branch protection two-tier gate).
+
+# ---------------------------------------------------------------------------
+# Default owner — every path falls back to the sole maintainer until an
+# explicit external contributor is added.
+# ---------------------------------------------------------------------------
+*                           @amit-t
+
+# ---------------------------------------------------------------------------
+# Q3 fixture protection — pinned eval-grade artifacts.
+# ---------------------------------------------------------------------------
+# Public labeled fixtures used by `cargo test` and the public eval lane.
+qa/fixtures/**              @amit-t
+
+# Private labeled fixtures used by the self-hosted `eval-regression` job
+# (see `.github/workflows/ci.yml`). These typically live in a sibling private
+# repo and are vendored in via submodule; the rule is here so that if they
+# ever land in-tree they are pinned automatically.
+qa/fixtures-private/**      @amit-t
+
+# Steering documents — process rules, ADR conventions, ralph prompts.
+# Treated as eval-grade because a silent rewrite changes how every downstream
+# agent (ralph, reviewers, future contributors) interprets every artifact.
+steering/**                 @amit-t
+
+# ---------------------------------------------------------------------------
+# Supporting governance files — pinned for the same reason as steering/**.
+# ---------------------------------------------------------------------------
+/.github/CODEOWNERS         @amit-t
+/.github/workflows/**       @amit-t
+/docs/branch-protection.md  @amit-t
+/CONTRIBUTING.md            @amit-t
+/LICENSE-MIT                @amit-t
+/LICENSE-APACHE             @amit-t
