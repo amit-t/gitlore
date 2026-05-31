@@ -1,0 +1,52 @@
+[package]
+name = "gitlore"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "Local-first, narrative TUI for repo intelligence (search, story, risk, hotspots)."
+
+# Library exposure keeps `tui::` and `cli::` reachable from integration
+# tests and from the bin entry. Bin name pins to `gitlore` so
+# `assert_cmd::cargo::CommandCargoExt::cargo_bin("gitlore")` resolves in
+# `tests/tui_launch_smoke.rs`.
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "gitlore"
+path = "src/main.rs"
+
+[dependencies]
+# CLI surface — clap v4 derive (SPEC-001 §4.1).
+clap = { version = "4", features = ["derive"] }
+# TUI — ratatui + crossterm (SPEC-001 §11.9 / §17, ADR-005).
+ratatui = "0.29"
+crossterm = "0.28"
+# Async runtime. Multi-thread runtime is on at M1 per OQ-T-5 so the
+# indexer and crossterm's async event reader share one runtime. `signal`
+# is required for graceful Ctrl-C shutdown.
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+# Terminal colour stream that respects NO_COLOR / TTY detection.
+anstream = "0.6"
+# Structured logging spine. Full file+stderr stack initialised by
+# `gitlore_core::log::init_logging` once flags are parsed; this crate
+# only opens the per-invocation span in `main`.
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# UUIDv7 for per-invocation `correlation_id` (sortable, time-ordered).
+uuid = { version = "1", features = ["v7"] }
+# Workspace tier dep — gitlore depends only on gitlore-core (ADR-005).
+gitlore-core = { path = "../gitlore-core" }
+
+[dev-dependencies]
+# Required by `tests/tui_launch_smoke.rs`. See its module docs for the
+# rationale (pty needed because crossterm reads from the controlling tty).
+assert_cmd = "2"
+tempfile = "3"
+portable-pty = "0.8"
+
+[lints]
+workspace = true
