@@ -2,7 +2,7 @@
 #
 # Public lane (this repo, GitHub-hosted runners):
 #   - fmt-check, clippy, test, ro-filesystem-integration
-#   - matrix: macos-latest + ubuntu-latest x stable Rust 1.75
+#   - matrix: macos-latest + ubuntu-latest x stable Rust 1.85
 #
 # Private lane (self-hosted, gitlore-private runner pool) per ADR-028:
 #   - eval-regression: stub at M1, lights up at M4 with
@@ -30,7 +30,7 @@ env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
   RUSTFLAGS: "-D warnings"
-  RUST_TOOLCHAIN: "1.75"
+  RUST_TOOLCHAIN: "1.85"
 
 jobs:
   fmt-check:
@@ -40,7 +40,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: ["1.75"]
+        rust: ["1.85"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust ${{ matrix.rust }}
@@ -58,7 +58,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: ["1.75"]
+        rust: ["1.85"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust ${{ matrix.rust }}
@@ -80,7 +80,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: ["1.75"]
+        rust: ["1.85"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust ${{ matrix.rust }}
@@ -105,7 +105,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        rust: ["1.75"]
+        rust: ["1.85"]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust ${{ matrix.rust }}
