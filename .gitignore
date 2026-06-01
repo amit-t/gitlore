@@ -1,6 +1,7 @@
 # Rust build artifacts
 /target/
 **/target/
+squat-artifacts/*/target/
 **/*.rs.bk
 
 # Editor/IDE
