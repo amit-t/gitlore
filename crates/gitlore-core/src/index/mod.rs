@@ -31,6 +31,15 @@
 //!   [`identity::MailmapResolver`] → [`identity::UnionFindResolver`],
 //!   composed by [`identity::ChainedResolver`]; persists into the
 //!   `identities` + `identity_aliases` tables introduced at M3-2.
+//! * [`classify`] — Q14 file classifier (M3-5, TDD-000 §2.2,
+//!   SPEC-001 §4.4, ADR-018). [`classify::Classifier::default_for`]
+//!   loads embedded defaults + ecosystem overlays detected at the repo
+//!   root, then [`classify::Classifier::classify`] maps a repo-relative
+//!   path to a single [`classify::Category`].
+//! * [`reclassify`] — bulk re-classification pass for the indexed
+//!   `commits` table. [`reclassify::reclassify_all`] walks every row,
+//!   re-runs the classifier over each commit's `files_changed`, and
+//!   updates the per-category counters in a single transaction.
 //!
 //! ## Wiring
 //!
@@ -40,8 +49,10 @@
 //! `migrate` is idempotent — calling it on an already-current database is a
 //! no-op that returns the current `schema_version`.
 
+pub mod classify;
 pub mod identity;
 pub mod lock;
 pub mod migrations;
+pub mod reclassify;
 pub mod schema;
 pub mod storage;
