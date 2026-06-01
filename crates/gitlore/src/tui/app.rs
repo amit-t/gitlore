@@ -63,7 +63,6 @@ impl Default for App {
 pub fn run<B>(terminal: &mut Terminal<B>, app: &mut App) -> io::Result<()>
 where
     B: Backend,
-    io::Error: From<<B as Backend>::Error>,
 {
     while !app.should_quit {
         terminal.draw(|frame| draw(frame, app))?;

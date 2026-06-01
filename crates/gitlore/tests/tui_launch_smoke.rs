@@ -78,7 +78,7 @@ fn run_git(cwd: &Path, args: &[&str]) {
 ///
 /// Returns the recorded exit status. Panics if gitlore dies before the
 /// alive window expires or fails to exit within `QUIT_TIMEOUT`.
-fn launch_and_quit(repo: &Path, cols: u16, rows: u16) -> std::process::ExitStatus {
+fn launch_and_quit(repo: &Path, cols: u16, rows: u16) -> portable_pty::ExitStatus {
     // Resolve the freshly built binary the way `cargo test` expects.
     let bin = StdCommand::cargo_bin("gitlore").expect("locate gitlore binary");
     let program = bin.get_program().to_os_string();
@@ -127,10 +127,7 @@ fn launch_and_quit(repo: &Path, cols: u16, rows: u16) -> std::process::ExitStatu
     let start = Instant::now();
     while start.elapsed() < ALIVE_WINDOW {
         if let Some(exit) = child.try_wait().expect("poll child") {
-            panic!(
-                "gitlore exited within the {:?} alive window with status {:?}",
-                ALIVE_WINDOW, exit
-            );
+            panic!("gitlore exited within the {ALIVE_WINDOW:?} alive window with status {exit:?}");
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -152,10 +149,7 @@ fn launch_and_quit(repo: &Path, cols: u16, rows: u16) -> std::process::ExitStatu
         }
         if Instant::now() > deadline {
             let _ = child.kill();
-            panic!(
-                "gitlore did not exit within {:?} after `q` keypress",
-                QUIT_TIMEOUT
-            );
+            panic!("gitlore did not exit within {QUIT_TIMEOUT:?} after `q` keypress");
         }
         std::thread::sleep(Duration::from_millis(50));
     }
@@ -168,8 +162,7 @@ fn boots_alive_and_quits_on_q() {
     let status = launch_and_quit(repo.path(), 80, 24);
     assert!(
         status.success(),
-        "gitlore exited non-zero on `q`: {:?}",
-        status
+        "gitlore exited non-zero on `q`: {status:?}"
     );
 }
 
@@ -182,8 +175,7 @@ fn small_terminal_20x10_does_not_panic() {
     let status = launch_and_quit(repo.path(), 20, 10);
     assert!(
         status.success(),
-        "gitlore did not exit cleanly at 20x10: {:?}",
-        status
+        "gitlore did not exit cleanly at 20x10: {status:?}"
     );
 }
 
@@ -197,9 +189,7 @@ fn idempotent_relaunch_in_same_repo() {
         let status = launch_and_quit(repo.path(), 80, 24);
         assert!(
             status.success(),
-            "relaunch attempt {} exited non-zero: {:?}",
-            attempt,
-            status
+            "relaunch attempt {attempt} exited non-zero: {status:?}"
         );
     }
 }

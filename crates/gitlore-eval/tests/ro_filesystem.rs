@@ -137,7 +137,7 @@ fn run_git(cwd: &Path, args: &[&str]) {
         .current_dir(cwd)
         .args(args)
         .status()
-        .unwrap_or_else(|e| panic!("spawn git {:?}: {e}", args));
+        .unwrap_or_else(|e| panic!("spawn git {args:?}: {e}"));
     assert!(
         status.success(),
         "git {:?} failed in {}",
@@ -340,7 +340,7 @@ fn run_gitlore(repo: &Path, args: &[&str]) -> std::process::Output {
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .output()
-        .unwrap_or_else(|e| panic!("spawn gitlore {:?}: {e}", args))
+        .unwrap_or_else(|e| panic!("spawn gitlore {args:?}: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -366,8 +366,7 @@ fn ro_contract_holds_across_m1_subcommands() {
         if let Some(code) = out.status.code() {
             assert!(
                 code >= 0,
-                "gitlore {:?} returned an impossible exit code {code}",
-                argv
+                "gitlore {argv:?} returned an impossible exit code {code}"
             );
         }
         let snap_after = snapshot_worktree(&repo);
