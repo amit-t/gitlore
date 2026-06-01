@@ -1,0 +1,163 @@
+# Default classification globs for gitlore (M3-5, TDD-000 §2.2 +
+# SPEC-001 §4.4 + ADR-018 + Q14).
+#
+# This file is embedded into the binary via `include_str!` and parsed by
+# `super::classify::Classifier::default_for`. Two top-level shapes:
+#
+# * `[default]` — globs that always apply, regardless of which ecosystems
+#   the repo declares. The categories below cover the
+#   Q14 precedence chain `generated > migration > test > infra > ci >
+#   config > asset > docs > code` (first-matching category wins).
+# * `[ecosystem.<name>]` — globs appended when the matching ecosystem
+#   marker is detected at `repo_root`. The marker is a sentinel file
+#   listed in the `marker` array; the first marker found enables the
+#   whole table. New ecosystems should be additive: avoid moving an
+#   existing glob from `[default]` into an ecosystem table unless you
+#   intend to drop its default-on behaviour.
+#
+# Keep the lists tight. Over-broad globs cause every change to look like
+# a "config" or "docs" touch and silently demote real code edits in
+# downstream risk and hotspot scoring.
+
+[default]
+generated = [
+  "**/*.pb.go",
+  "**/*_pb.py",
+  "**/*.gen.go",
+  "**/dist/**",
+  "**/build/**",
+  "**/node_modules/**",
+  "**/vendor/**",
+  "**/.next/**",
+  "**/target/**",
+]
+
+migration = [
+  "**/migrations/**",
+  "**/db/migrate/**",
+  "**/sql/migrations/**",
+  "**/alembic/versions/**",
+]
+
+test = [
+  "**/test/**",
+  "**/tests/**",
+  "**/__tests__/**",
+  "**/*_test.go",
+  "**/*.test.ts",
+  "**/*.test.tsx",
+  "**/*.test.js",
+  "**/*_test.py",
+  "**/spec/**",
+  "**/*.spec.ts",
+  "**/*.spec.js",
+  "**/*_spec.rb",
+]
+
+infra = [
+  "**/Dockerfile",
+  "**/docker-compose*.yml",
+  "**/*.tf",
+  "**/terraform/**",
+  "**/k8s/**",
+  "**/helm/**",
+  "**/ansible/**",
+  "**/Pulumi.yaml",
+]
+
+ci = [
+  ".github/workflows/**",
+  ".gitlab-ci.yml",
+  ".circleci/**",
+  "**/Jenkinsfile",
+  ".travis.yml",
+  "azure-pipelines.yml",
+]
+
+config = [
+  "**/*.toml",
+  "**/*.yaml",
+  "**/*.yml",
+  "**/*.json",
+  "**/*.ini",
+  "**/*.cfg",
+  "**/*.conf",
+  "**/.env*",
+  "**/*.properties",
+]
+
+asset = [
+  "**/*.png",
+  "**/*.jpg",
+  "**/*.jpeg",
+  "**/*.gif",
+  "**/*.svg",
+  "**/*.ico",
+  "**/*.woff*",
+  "**/*.ttf",
+  "**/*.eot",
+  "**/*.mp4",
+  "**/*.webp",
+]
+
+docs = [
+  "**/*.md",
+  "**/*.rst",
+  "**/*.adoc",
+  "**/*.txt",
+  "**/docs/**",
+  "**/README*",
+  "**/CHANGELOG*",
+  "**/LICENSE*",
+]
+
+code = []
+
+# ---------------------------------------------------------------------------
+# Ecosystem overlays
+#
+# Each table is enabled when *any* of its `marker` entries is present at
+# the repo root. Markers must be repo-root-relative filenames (not
+# globs); the scan in `Classifier::default_for` checks them via a single
+# `path.join(marker).exists()` call apiece.
+# ---------------------------------------------------------------------------
+
+[ecosystem.rust]
+marker = ["Cargo.toml"]
+code = ["**/*.rs"]
+config = ["Cargo.toml", "Cargo.lock"]
+
+[ecosystem.nodejs]
+marker = ["package.json"]
+code = ["**/*.ts", "**/*.tsx", "**/*.js", "**/*.jsx"]
+config = ["package.json", "package-lock.json", "tsconfig.json", "yarn.lock", "pnpm-lock.yaml"]
+
+[ecosystem.go]
+marker = ["go.mod"]
+code = ["**/*.go"]
+generated = ["**/zz_generated_*.go"]
+
+[ecosystem.python]
+marker = ["pyproject.toml", "requirements.txt", "setup.py"]
+code = ["**/*.py"]
+config = ["pyproject.toml", "setup.cfg", "requirements*.txt"]
+
+[ecosystem.jvm]
+marker = ["pom.xml", "build.gradle", "build.gradle.kts"]
+code = ["**/*.java", "**/*.kt", "**/*.scala", "**/*.groovy"]
+config = ["pom.xml", "build.gradle", "build.gradle.kts", "settings.gradle", "settings.gradle.kts"]
+
+[ecosystem.ruby]
+marker = ["Gemfile"]
+code = ["**/*.rb"]
+config = ["Gemfile", "Gemfile.lock", "*.gemspec"]
+
+[ecosystem.php]
+marker = ["composer.json"]
+code = ["**/*.php"]
+config = ["composer.json", "composer.lock"]
+
+[ecosystem.elixir]
+marker = ["mix.exs"]
+code = ["**/*.ex", "**/*.exs"]
+config = ["mix.exs", "mix.lock"]
