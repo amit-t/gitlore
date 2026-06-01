@@ -16,29 +16,19 @@
 //!
 //! M1 surface only:
 //!
-//! * [`config`] — TOML config schema, defaults, and `~/.config/gitlore/`
-//!   resolution (`directories`-backed). Stubbed; real loader lands with M10.
-//! * [`error`] — top-level [`enum@error::Error`] / [`error::Result`] used
-//!   across the workspace. `thiserror`-based so call sites stay terse and
-//!   surfaces stay non-panicky (spec §8 / §11).
-//! * [`log`] — `tracing` initialization helpers (stderr in dev, rolling file
-//!   appender under XDG state dir in release).
-//!
-//! Future modules (storage, index, search, story, risk, hotspots, git) land
-//! milestone-by-milestone — see `gitlore_unified_spec.md` §20.
-//!
-//! ## Features
-//!
-//! * `embeddings` (off) — gates `fastembed` + `sqlite-vec` for the optional
-//!   semantic layer. Toggled by `gitlore setup-embeddings` at runtime (spec
-//!   §4.4 / §22 row 6).
-//! * `git2` (off) — Phase 3 reservation per OQ-T-3. Lets us swap the CLI
-//!   `GitRepo` backend for a `git2-rs`-backed one without a breaking
-//!   feature-name collision downstream.
+//! * [`config`] — TOML config schema and `~/.config/gitlore/` resolution.
+//! * [`error`] — workspace-wide [`enum@error::Error`] / [`error::Result`].
+//! * [`log`] — `tracing` init helpers (stderr + optional rolling file sink).
 
-#![deny(missing_docs)]
 #![forbid(unsafe_code)]
+#![deny(missing_docs)]
 
+#[allow(missing_docs)]
 pub mod config;
 pub mod error;
 pub mod log;
+
+pub use config::{
+    Bm25Weights, ClassificationConfig, Config, ConfigError, IndexConfig, OwnershipConfig,
+    RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
+};
