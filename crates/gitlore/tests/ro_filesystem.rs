@@ -36,18 +36,12 @@
 //!
 //! ## Wiring
 //!
-//! This file lives at `crates/gitlore-eval/tests/ro_filesystem.rs` as a
-//! temporary home until the `gitlore` bin crate scaffold (PR #15) merges.
-//! Once that lands, move this file to `crates/gitlore/tests/ro_filesystem.rs`
-//! and drop the `#[ignore]` attributes on the two test fns below. The CI lane
+//! This file lives at `crates/gitlore/tests/ro_filesystem.rs` and is wired
+//! through `gitlore`'s own dev-dependencies. The CI lane
 //! `ro-filesystem-integration` in `.github/workflows/ci.yml` runs
 //! `cargo test --workspace --test ro_filesystem --locked` on macOS + Linux.
 //!
-//! The tests are `#[ignore]`'d on main because they invoke `cargo_bin("gitlore")`
-//! and the `gitlore` binary does not exist on main yet. Unignoring without the
-//! bin crate would make the tests panic at runtime with a missing-binary error.
-//!
-//! Required dev-dependencies (declared in workspace `Cargo.toml`):
+//! Required dev-dependencies (declared in `crates/gitlore/Cargo.toml`):
 //!
 //! ```toml
 //! [dev-dependencies]
@@ -348,7 +342,6 @@ fn run_gitlore(repo: &Path, args: &[&str]) -> std::process::Output {
 // ---------------------------------------------------------------------------
 
 #[test]
-#[ignore = "requires gitlore bin crate (PR #15); unignore once merged"]
 fn ro_contract_holds_across_m1_subcommands() {
     let fixture = build_fixture_repo();
     let repo = fixture.path().to_path_buf();
@@ -382,7 +375,6 @@ fn ro_contract_holds_across_m1_subcommands() {
 }
 
 #[test]
-#[ignore = "requires gitlore bin crate (PR #15); unignore once merged"]
 fn ro_contract_holds_across_60s_tui_session() {
     let duration = tui_session_duration();
     let fixture = build_fixture_repo();

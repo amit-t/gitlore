@@ -38,15 +38,23 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # UUIDv7 for per-invocation `correlation_id` (sortable, time-ordered).
 uuid = { version = "1", features = ["v7"] }
+# Renders the SPEC-001 §4.3 JSON error envelope emitted by `gitlore --json`.
+serde_json = "1"
 # Workspace tier dep — gitlore depends only on gitlore-core (ADR-005).
 gitlore-core = { path = "../gitlore-core" }
 
 [dev-dependencies]
 # Required by `tests/tui_launch_smoke.rs`. See its module docs for the
 # rationale (pty needed because crossterm reads from the controlling tty).
+# Also required by `tests/ro_filesystem.rs` (relocated from gitlore-eval now
+# that the bin crate is in the workspace) — `assert_cmd::cargo::cargo_bin`
+# resolves the freshly built `gitlore` binary path; `sha2` + `walkdir`
+# fingerprint the worktree to detect any RO-contract violation.
 assert_cmd = "2"
 tempfile = "3"
 portable-pty = "0.8"
+sha2 = "0.10"
+walkdir = "2"
 
 [lints]
 workspace = true

@@ -63,13 +63,12 @@ fn main() -> ExitCode {
 
         match gitlore::cli::run().instrument(span).await {
             Ok(()) => ExitCode::SUCCESS,
-            Err(err) => {
-                // cli::run is expected to have emitted a structured
-                // tracing event on the failure path; this stderr line
-                // is the final human-readable line on exit.
-                eprintln!("gitlore: {err}");
-                ExitCode::FAILURE
-            }
+            // `cli::run` owns user-facing error rendering (plain `error: …`
+            // line to stderr, or the SPEC-001 §4.3 JSON envelope to stdout
+            // when `--json` was passed). `main` is intentionally silent on
+            // this path so a single error doesn't show up twice — its sole
+            // remaining job is the exit-code translation.
+            Err(_) => ExitCode::FAILURE,
         }
     })
 }
