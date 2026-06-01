@@ -1,1 +1,0 @@
-/Users/amittiwari/Projects/Tools-Utilities/gitlore/squat-artifacts/crate-gitlore/target/debug/libgitlore.rlib: /Users/amittiwari/Projects/Tools-Utilities/gitlore/squat-artifacts/crate-gitlore/target/package/gitlore-0.0.1/src/lib.rs

@@ -1,0 +1,3 @@
+# squat-artifacts
+
+This directory holds the minimal name-claim packages published to crates.io, PyPI, the Homebrew tap, Scoop, and GitHub to reserve the `gitlore` name across registries ahead of the M10 public launch; the `gh-` prefixed subdirectories were tracked as submodules in an earlier iteration and now exist only as removed placeholders (the actual GitHub repositories live independently under their own remotes), and nothing under this tree is part of the gitlore binary build or kept in bidirectional sync with the published packages, so edits here only matter when we cut a new squat publish.
