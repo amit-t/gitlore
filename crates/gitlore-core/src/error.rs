@@ -58,10 +58,24 @@ pub enum Error {
     },
 
     /// Another gitlore process holds the index write lock.
-    #[error("could not acquire index lock at {lock_path}; another process holds it")]
+    ///
+    /// `held_pid` and `started_at` mirror the two-line `<pid>\n<rfc3339>\n`
+    /// payload the writer stamps into the lockfile on acquire (TDD-000
+    /// §2.2). Either may be `None` when the file is missing, empty, or
+    /// truncated mid-write — the variant is still returned so callers can
+    /// distinguish lock contention from generic I/O.
+    #[error(
+        "could not acquire index lock at {lock_path}; \
+         another process holds it (pid={held_pid:?}, since={started_at:?})"
+    )]
     LockContention {
         /// Filesystem path of the contested lock file.
         lock_path: PathBuf,
+        /// PID recorded in the lockfile when readable.
+        held_pid: Option<u32>,
+        /// RFC-3339 acquisition timestamp recorded in the lockfile when
+        /// readable.
+        started_at: Option<String>,
     },
 
     /// The requested embedding model is not present in the model cache.
@@ -263,6 +277,8 @@ mod tests {
             (
                 Error::LockContention {
                     lock_path: PathBuf::from("/tmp/index.lock"),
+                    held_pid: Some(4242),
+                    started_at: Some("2026-01-01T00:00:00Z".to_string()),
                 },
                 "lock_contention",
             ),
