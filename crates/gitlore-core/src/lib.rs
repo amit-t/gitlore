@@ -22,6 +22,10 @@
 //! * [`git`] — [`git::GitProvider`] trait + CLI-shell-out backend
 //!   ([`git::cli::GitCliProvider`]) and ref-enumeration helpers
 //!   ([`git::refs`]). M3 foundation for the indexer.
+//! * [`index`] — SPEC-001 §5.1/§5.2 SQLite index: row mirrors
+//!   ([`index::schema`]), versioned migration runner
+//!   ([`index::migrations`]), and the index-path resolver
+//!   ([`index::storage`]). M3-2 foundation for the indexer.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -30,6 +34,7 @@
 pub mod config;
 pub mod error;
 pub mod git;
+pub mod index;
 pub mod log;
 
 pub use config::{
