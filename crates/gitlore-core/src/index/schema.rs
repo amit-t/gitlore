@@ -171,6 +171,10 @@ pub struct Identity {
     pub last_seen_at: i64,
     /// Number of commits authored under this identity (cached).
     pub commit_count: u64,
+    /// `1` iff this identity is classified as a bot (GitHub App, CI worker,
+    /// `dependabot`-style automation). Populated by
+    /// [`crate::index::identity::is_bot`] and the override resolver.
+    pub is_bot: u8,
 }
 
 /// One row of the `identity_aliases` table.
@@ -499,6 +503,7 @@ mod tests {
             first_seen_at: 1,
             last_seen_at: 2,
             commit_count: 7,
+            is_bot: 0,
         });
         check!(IdentityAlias {
             id: 1,
