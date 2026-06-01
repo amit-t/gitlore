@@ -157,7 +157,7 @@ fn bootstrap_fixture_repo(real_git: &Path, repo_dir: &Path) {
             .env("GIT_CONFIG_SYSTEM", "/dev/null")
             .status()
             .expect("spawn git");
-        assert!(status.success(), "git {:?} failed", args);
+        assert!(status.success(), "git {args:?} failed");
     };
     run(&["init", "-q", "--initial-branch=main"]);
     fs::write(repo_dir.join("a.txt"), "hello\n").unwrap();
