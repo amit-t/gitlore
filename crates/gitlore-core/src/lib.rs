@@ -32,3 +32,4 @@ pub use config::{
     Bm25Weights, ClassificationConfig, Config, ConfigError, IndexConfig, OwnershipConfig,
     RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
 };
+pub use log::{init_logging, LogGuard, LogLevel};
