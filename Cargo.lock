@@ -1181,11 +1181,14 @@ dependencies = [
  "gitlore-core",
  "portable-pty",
  "ratatui",
+ "serde_json",
+ "sha2",
  "tempfile",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "uuid",
+ "walkdir",
 ]
 
 [[package]]
@@ -1217,12 +1220,6 @@ dependencies = [
 [[package]]
 name = "gitlore-eval"
 version = "0.0.0"
-dependencies = [
- "assert_cmd",
- "sha2",
- "tempfile",
- "walkdir",
-]
 
 [[package]]
 name = "glob"

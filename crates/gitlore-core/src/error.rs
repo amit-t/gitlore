@@ -170,6 +170,19 @@ pub enum Error {
     /// `"git"` string.
     #[error("git error: {0}")]
     Git(String),
+
+    /// A clap-derive subcommand is plumbed but not yet implemented.
+    ///
+    /// At M1 every subcommand from SPEC-001 §4.1 is parseable so `--help`
+    /// reflects the eventual surface, but only the default no-arg TUI launch
+    /// has a real implementation. Reaching any subcommand body returns this
+    /// error so callers (and the JSON envelope) see a stable, machine-checkable
+    /// code rather than a panic or a bespoke string per command.
+    #[error("unimplemented: subcommand '{subcommand}' is not yet implemented (M1 scaffold only)")]
+    Unimplemented {
+        /// Name of the subcommand that was invoked (e.g. `"search"`).
+        subcommand: String,
+    },
 }
 
 impl Error {
@@ -202,6 +215,7 @@ impl Error {
             Error::Io(_) => "io",
             Error::Sqlite(_) => "sqlite",
             Error::Git(_) => "git",
+            Error::Unimplemented { .. } => "unimplemented",
         }
     }
 }
@@ -317,6 +331,12 @@ mod tests {
             ),
             (Error::Sqlite("disk image malformed".to_string()), "sqlite"),
             (Error::Git("bad object".to_string()), "git"),
+            (
+                Error::Unimplemented {
+                    subcommand: "search".to_string(),
+                },
+                "unimplemented",
+            ),
         ]
     }
 
@@ -348,7 +368,8 @@ mod tests {
                 | Error::ConfigTypeMismatch { .. }
                 | Error::Io(_)
                 | Error::Sqlite(_)
-                | Error::Git(_) => e.code(),
+                | Error::Git(_)
+                | Error::Unimplemented { .. } => e.code(),
             }
         }
         for (variant, _) in &fixture {
@@ -374,6 +395,7 @@ mod tests {
             "io",
             "sqlite",
             "git",
+            "unimplemented",
         ] {
             assert!(
                 fixture_codes.contains(expected),
