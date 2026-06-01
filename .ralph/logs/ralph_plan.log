@@ -1,0 +1,4 @@
+[2026-06-01 08:58:37] [INFO] Ralph not enabled in current directory (no .ralph/ folder)
+[2026-06-01 08:58:37] [INFO] Searching for PM-OS and DoE-OS directories...
+[2026-06-01 08:58:37] [WARN] No *-pm-os directory found
+[2026-06-01 08:58:37] [WARN] No *-doe-os directory found
