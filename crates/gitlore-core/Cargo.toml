@@ -1,0 +1,81 @@
+[package]
+name = "gitlore-core"
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+description = "gitlore workspace-internal core: config, errors, logging, shared types. Not published."
+publish = false
+
+[lib]
+path = "src/lib.rs"
+
+[lints]
+workspace = true
+
+# -----------------------------------------------------------------------------
+# Dependencies
+#
+# gitlore-core is the leaf crate in the workspace per ADR-005: it has zero
+# intra-workspace deps. The dep set below is the M1 baseline shared by every
+# upper-tier crate (gitlore, gitlore-eval). New deps land here only when they
+# are needed across crates; per-crate-private deps belong in the upper crate's
+# manifest.
+#
+# `wal` is not a rusqlite Cargo feature. Write-Ahead Logging is enabled at
+# runtime via `PRAGMA journal_mode=WAL` on every connection (see spec §11 /
+# §14 — read-only contract + concurrent indexer/TUI). The feature set below
+# pulls in the bundled SQLite source (so we never pick up a stale system
+# libsqlite3) and `load_extension` (required to wire up `sqlite-vec` when the
+# `embeddings` feature is on).
+# -----------------------------------------------------------------------------
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled", "load_extension"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+tracing-appender = "0.2"
+uuid = { version = "1", features = ["v7"] }
+directories = "5"
+fs2 = "0.4"
+nix = { version = "0.29", features = ["fs"] }
+glob = "0.3"
+regex = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+
+# Optional deps gated by `embeddings` / `git2` features below. They are
+# declared but never compiled by default — Phase 1.5 / Phase 3 reservations.
+fastembed = { version = "4", optional = true }
+sqlite-vec = { version = "0.1", optional = true }
+git2 = { version = "0.19", optional = true, default-features = false }
+
+[dev-dependencies]
+# Required by tests/workspace_layering.rs (ADR-005 enforcement).
+cargo_metadata = "0.18"
+
+# -----------------------------------------------------------------------------
+# Features
+#
+# All features are OFF by default. gitlore is useful with zero configuration
+# on first run (spec §4.1 / §8 / OQ resolution row 2): no embeddings, no
+# git2-rs hot path. Features below are documented reservations.
+#
+#   * embeddings — Phase 1.5: `gitlore setup-embeddings` flips this on,
+#     wires `fastembed-rs` for vector generation and `sqlite-vec` for the
+#     ANN index. Falls back gracefully when the extension fails to load
+#     (spec §22 row 6).
+#   * git2 — Phase 3: replaces the CLI-shell-out `GitRepo` backend with the
+#     `git2-rs` binding for indexing throughput. OQ-T-3 reserves the slot
+#     so downstream consumers do not feature-collide with us later.
+# -----------------------------------------------------------------------------
+
+[features]
+default = []
+embeddings = ["dep:fastembed", "dep:sqlite-vec"]
+git2 = ["dep:git2"]

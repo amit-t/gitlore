@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
-members = ["crates/gitlore-eval"]
+members = ["crates/gitlore", "crates/gitlore-core", "crates/gitlore-eval"]
 
 [workspace.package]
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.88"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/amit-t/gitlore"
 authors = ["Amit Tiwari <tiwari.m.amit@gmail.com>"]
