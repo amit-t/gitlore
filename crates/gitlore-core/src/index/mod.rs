@@ -21,6 +21,11 @@
 //!   `<common-dir>/gitlore/` (so the index travels with the repo's bare
 //!   storage and is shared across worktrees), falling back to the XDG
 //!   per-user location when the common dir is read-only (Q15b, ADR-029).
+//! * [`lock`] — writer lock + WAL checkpoint helpers (TDD-000 §2.2,
+//!   SPEC-001 §3.4 / §4.5, ADR-004). One writer at a time via
+//!   `fs2`-backed advisory locking with a `<pid>\n<rfc3339>\n`
+//!   diagnostic payload; `wal_checkpoint_if_large` keeps the WAL from
+//!   inflating during long indexer sessions.
 //!
 //! ## Wiring
 //!
@@ -30,6 +35,7 @@
 //! `migrate` is idempotent — calling it on an already-current database is a
 //! no-op that returns the current `schema_version`.
 
+pub mod lock;
 pub mod migrations;
 pub mod schema;
 pub mod storage;
