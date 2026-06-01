@@ -122,9 +122,15 @@ jobs:
   eval-regression:
     # Private lane per ADR-028.
     # Only runs on PRs explicitly labeled `tier:judgement` by a reviewer,
-    # and only on the self-hosted gitlore-private runner pool. The job is
-    # a deliberate stub at M1 (walking skeleton). It lights up at M4 when
-    # the labeled eval set lands and the `gitlore-eval` binary exists.
+    # and only on the self-hosted gitlore-private runner pool.
+    #
+    # M2 (this milestone): the `gitlore-eval` binary exists with the
+    # built-in scenario registry, but every registered scenario is still
+    # a stub (M4+ implementations land per-pillar). The job invokes the
+    # real binary so the CI wiring is exercised on every `tier:judgement`
+    # PR; the regression walk currently no-ops with `passed: true`
+    # because the stubs all pass. The gate flips real-for-real once
+    # concrete scenarios ship.
     name: eval-regression (self-hosted, gitlore-private)
     if: >-
       github.event_name == 'pull_request' &&
@@ -134,9 +140,13 @@ jobs:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - name: Stub — eval regression (M1)
-        run: |
-          echo "eval-regression stub: this job is a placeholder until M4."
-          echo "At M4 the step body becomes:"
-          echo "  gitlore-eval --regression --baseline=origin/main"
-          echo "See ADR-028 and unified spec §20 (M4) for the full contract."
+      - name: Install Rust ${{ env.RUST_TOOLCHAIN }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: eval-regression-self-hosted
+      - name: gitlore-eval --regression --baseline=origin/main
+        run: cargo run -p gitlore-eval --bin gitlore-eval --locked -- --regression --baseline=origin/main
