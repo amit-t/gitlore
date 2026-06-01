@@ -12,6 +12,8 @@
 //! The trait + registry land first (this file) so the harness can be wired
 //! into CI before any concrete scenarios exist.
 
+mod builtin;
+
 use std::collections::BTreeMap;
 
 /// Per-scenario evaluation result.
