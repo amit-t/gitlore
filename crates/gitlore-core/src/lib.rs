@@ -14,11 +14,14 @@
 //!
 //! ## Scope
 //!
-//! M1 surface only:
+//! M1 surface plus the M3-1 Git access seam:
 //!
 //! * [`config`] — TOML config schema and `~/.config/gitlore/` resolution.
 //! * [`error`] — workspace-wide [`enum@error::Error`] / [`error::Result`].
 //! * [`log`] — `tracing` init helpers (stderr + optional rolling file sink).
+//! * [`git`] — [`git::GitProvider`] trait + CLI-shell-out backend
+//!   ([`git::cli::GitCliProvider`]) and ref-enumeration helpers
+//!   ([`git::refs`]). M3 foundation for the indexer.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -26,6 +29,7 @@
 #[allow(missing_docs)]
 pub mod config;
 pub mod error;
+pub mod git;
 pub mod log;
 
 pub use config::{

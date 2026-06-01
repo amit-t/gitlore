@@ -163,13 +163,21 @@ pub enum Error {
     #[error("sqlite error: {0}")]
     Sqlite(String),
 
-    /// Underlying Git error (libgit2 / gix / shell-out).
+    /// Underlying Git error (shell-out via `GitCliProvider`, or eventually
+    /// libgit2 / gix).
     ///
-    /// M1 carries a pre-formatted message; once a concrete git layer lands
-    /// the payload gains a typed `#[from]` without altering [`Error::code`]'s
-    /// `"git"` string.
-    #[error("git error: {0}")]
-    Git(String),
+    /// Carries the captured stderr verbatim and the subprocess exit `code`.
+    /// `code` is the OS exit status when available; `-1` is reserved for
+    /// "killed by signal" or "timed out" (the M3 CLI backend uses `-1` for
+    /// its 30s timeout path). The wire identifier remains `"git"` regardless
+    /// of payload shape.
+    #[error("git command exited with {code}: {stderr}")]
+    Git {
+        /// Captured stderr from the underlying git invocation.
+        stderr: String,
+        /// Subprocess exit code (`-1` for signal/timeout).
+        code: i32,
+    },
 
     /// A clap-derive subcommand is plumbed but not yet implemented.
     ///
@@ -214,7 +222,7 @@ impl Error {
             Error::ConfigTypeMismatch { .. } => "config_type_mismatch",
             Error::Io(_) => "io",
             Error::Sqlite(_) => "sqlite",
-            Error::Git(_) => "git",
+            Error::Git { .. } => "git",
             Error::Unimplemented { .. } => "unimplemented",
         }
     }
@@ -330,7 +338,13 @@ mod tests {
                 "io",
             ),
             (Error::Sqlite("disk image malformed".to_string()), "sqlite"),
-            (Error::Git("bad object".to_string()), "git"),
+            (
+                Error::Git {
+                    stderr: "fatal: bad object\n".to_string(),
+                    code: 128,
+                },
+                "git",
+            ),
             (
                 Error::Unimplemented {
                     subcommand: "search".to_string(),
@@ -368,7 +382,7 @@ mod tests {
                 | Error::ConfigTypeMismatch { .. }
                 | Error::Io(_)
                 | Error::Sqlite(_)
-                | Error::Git(_)
+                | Error::Git { .. }
                 | Error::Unimplemented { .. } => e.code(),
             }
         }
