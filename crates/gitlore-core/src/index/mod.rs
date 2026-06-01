@@ -40,6 +40,10 @@
 //!   `commits` table. [`reclassify::reclassify_all`] walks every row,
 //!   re-runs the classifier over each commit's `files_changed`, and
 //!   updates the per-category counters in a single transaction.
+//! * [`indexer`] — M3-6 walker engine. [`indexer::Indexer`] composes
+//!   the provider, schema, lock, identity, and classify layers into a
+//!   resumable walk + persistence pipeline with per-ref watermarks,
+//!   revert detection, force-push retention, and chunked writes.
 //!
 //! ## Wiring
 //!
@@ -51,6 +55,7 @@
 
 pub mod classify;
 pub mod identity;
+pub mod indexer;
 pub mod lock;
 pub mod migrations;
 pub mod reclassify;
