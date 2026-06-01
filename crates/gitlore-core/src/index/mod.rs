@@ -26,6 +26,11 @@
 //!   `fs2`-backed advisory locking with a `<pid>\n<rfc3339>\n`
 //!   diagnostic payload; `wal_checkpoint_if_large` keeps the WAL from
 //!   inflating during long indexer sessions.
+//! * [`identity`] — three-link identity resolver (M3-4, TDD-000 §2.2,
+//!   ADR-017). [`identity::OverrideResolver`] →
+//!   [`identity::MailmapResolver`] → [`identity::UnionFindResolver`],
+//!   composed by [`identity::ChainedResolver`]; persists into the
+//!   `identities` + `identity_aliases` tables introduced at M3-2.
 //!
 //! ## Wiring
 //!
@@ -35,6 +40,7 @@
 //! `migrate` is idempotent — calling it on an already-current database is a
 //! no-op that returns the current `schema_version`.
 
+pub mod identity;
 pub mod lock;
 pub mod migrations;
 pub mod schema;
