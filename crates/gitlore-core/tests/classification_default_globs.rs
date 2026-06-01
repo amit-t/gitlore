@@ -55,8 +55,7 @@ fn default_classification_matches_hand_labeled_set() {
         let got = c.classify(path);
         assert_eq!(
             got, *expected,
-            "classification drift on `{path}`: expected {:?}, got {:?}",
-            expected, got
+            "classification drift on `{path}`: expected {expected:?}, got {got:?}",
         );
     }
 }
