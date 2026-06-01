@@ -11,3 +11,15 @@
 
 # OS cruft
 .DS_Store
+
+# Ralph worker state (do not track)
+/.ralph/
+
+# Workbench sync-context drop
+/ai/
+
+# Per-task worktree dir created by ralph
+/gitlore-worktrees/
+
+# Workbench sync-context bug: drops a file with embedded newline as filename
+Executing task in*
