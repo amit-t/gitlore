@@ -124,18 +124,24 @@ impl Default for IndexConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default, deny_unknown_fields)]
 pub struct SearchConfig {
+    /// Default number of results to return. Default: `50`.
+    pub default_limit: u32,
+    /// Soft cap on the number of results to return. Default: `1000`.
+    pub soft_cap: u32,
     /// Half-life (in days) used in the recency-decay term of the ranking
     /// blend. Default: `180`.
     pub recency_half_life_days: u32,
     /// Per-field BM25 weights applied during lexical scoring.
-    pub bm25_weights: Bm25Weights,
+    pub bm25: Bm25Weights,
 }
 
 impl Default for SearchConfig {
     fn default() -> Self {
         Self {
+            default_limit: 50,
+            soft_cap: 1000,
             recency_half_life_days: 180,
-            bm25_weights: Bm25Weights::default(),
+            bm25: Bm25Weights::default(),
         }
     }
 }
@@ -505,11 +511,13 @@ mod tests {
         assert_eq!(cfg.index.max_initial_commits, 50_000);
 
         // SearchConfig
+        assert_eq!(cfg.search.default_limit, 50);
+        assert_eq!(cfg.search.soft_cap, 1000);
         assert_eq!(cfg.search.recency_half_life_days, 180);
-        assert_eq!(cfg.search.bm25_weights.subject, 4.0);
-        assert_eq!(cfg.search.bm25_weights.body, 1.0);
-        assert_eq!(cfg.search.bm25_weights.expanded, 1.5);
-        assert_eq!(cfg.search.bm25_weights.paths, 2.0);
+        assert_eq!(cfg.search.bm25.subject, 4.0);
+        assert_eq!(cfg.search.bm25.body, 1.0);
+        assert_eq!(cfg.search.bm25.expanded, 1.5);
+        assert_eq!(cfg.search.bm25.paths, 2.0);
 
         // StoryConfig
         assert_eq!(cfg.story.coherence_threshold, 0.5);
@@ -569,7 +577,7 @@ mod tests {
 [index]
 max_initial_commits = 1000
 
-[search.bm25_weights]
+[search.bm25]
 subject = 7.5
 "#,
         )
@@ -580,12 +588,14 @@ subject = 7.5
         assert!(cfg.index.include_remote_refs);
         assert!(cfg.index.include_tags);
 
-        assert_eq!(cfg.search.bm25_weights.subject, 7.5);
+        assert_eq!(cfg.search.bm25.subject, 7.5);
         // Sibling BM25 keys keep their defaults.
-        assert_eq!(cfg.search.bm25_weights.body, 1.0);
-        assert_eq!(cfg.search.bm25_weights.expanded, 1.5);
-        assert_eq!(cfg.search.bm25_weights.paths, 2.0);
+        assert_eq!(cfg.search.bm25.body, 1.0);
+        assert_eq!(cfg.search.bm25.expanded, 1.5);
+        assert_eq!(cfg.search.bm25.paths, 2.0);
         // Sibling Search keys keep their defaults.
+        assert_eq!(cfg.search.default_limit, 50);
+        assert_eq!(cfg.search.soft_cap, 1000);
         assert_eq!(cfg.search.recency_half_life_days, 180);
     }
 
