@@ -12,6 +12,7 @@
 //!   module declaration lives here.
 //! * [`tui`] — ratatui application shell, mode switcher, and per-mode
 //!   skeleton (Search / Story / Risk / Hotspots).
+//! * [`output`] — formatting backends for JSON and human-readable output.
 //!
 //! No business logic lives at the crate root. The bin's `main.rs` owns
 //! process concerns (tokio runtime, correlation id, top-level span,
@@ -19,3 +20,4 @@
 
 pub mod cli;
 pub mod tui;
+pub mod output;
