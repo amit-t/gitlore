@@ -190,8 +190,26 @@ fn drain<R: Read>(mut r: R) -> Vec<u8> {
 
 impl GitProvider for GitCliProvider {
     fn common_dir(&self) -> Result<PathBuf> {
-        let out = self.run_git(&["rev-parse", "--git-common-dir"])?;
-        let s = String::from_utf8_lossy(&out).trim().to_string();
+        // `git rev-parse --git-common-dir` exits 128 with the literal
+        // "fatal: not a git repository" stderr when the cwd is outside any
+        // working tree. Map that specific failure to [`Error::NotARepo`]
+        // so the CLI surface can render the SPEC-001 §4.3 `not_a_repo`
+        // envelope and the friendly stderr line (AC-INIT-4) instead of
+        // bubbling the raw git-exit-128 message.
+        let raw = self.run_git_raw(&["rev-parse", "--git-common-dir"])?;
+        if !raw.success {
+            let stderr = String::from_utf8_lossy(&raw.stderr);
+            if stderr.contains("not a git repository") {
+                return Err(Error::NotARepo {
+                    path: self.repo_root.clone(),
+                });
+            }
+            return Err(Error::Git {
+                stderr: stderr.into_owned(),
+                code: raw.code.unwrap_or(-1),
+            });
+        }
+        let s = String::from_utf8_lossy(&raw.stdout).trim().to_string();
         if s.is_empty() {
             return Err(Error::NotARepo {
                 path: self.repo_root.clone(),
