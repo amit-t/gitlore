@@ -14,7 +14,7 @@ use std::collections::HashMap;
 ///
 /// The shape of this struct determines the cache key for prepared MATCH queries.
 /// Different filter shapes result in different SQL query templates.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Default)]
 pub struct FilterClause {
     /// Filter by author identity ID (if any).
     pub author_identity_id: Option<i64>,
@@ -26,18 +26,6 @@ pub struct FilterClause {
     pub min_authored_at: Option<i64>,
     /// Maximum commit timestamp (unix epoch seconds, if any).
     pub max_authored_at: Option<i64>,
-}
-
-impl Default for FilterClause {
-    fn default() -> Self {
-        Self {
-            author_identity_id: None,
-            story_id: None,
-            risk_label: None,
-            min_authored_at: None,
-            max_authored_at: None,
-        }
-    }
 }
 
 /// A raw search hit from FTS5, before any additional processing.
@@ -66,12 +54,8 @@ pub trait LexicalSearch {
     /// # Returns
     ///
     /// A vector of raw hits ordered by relevance (highest BM25 score first).
-    fn search(
-        &self,
-        query: &str,
-        filter: Option<&FilterClause>,
-        limit: u32,
-    ) -> Result<Vec<RawHit>>;
+    fn search(&self, query: &str, filter: Option<&FilterClause>, limit: u32)
+        -> Result<Vec<RawHit>>;
 }
 
 /// FTS5-based lexical search implementation.
@@ -243,15 +227,24 @@ impl<'a> LexicalSearch for Fts5LexicalSearch<'a> {
         // Get cached query SQL
         let sql = self.get_cached_query(filter);
 
-        let mut stmt = self.conn.prepare(&sql).map_err(|e| Error::Sqlite(e.to_string()))?;
+        let mut stmt = self
+            .conn
+            .prepare(&sql)
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
 
         let rows = stmt
-            .query_map([&escaped as &dyn rusqlite::ToSql, &limit as &dyn rusqlite::ToSql], |row| {
-                Ok(RawHit {
-                    sha: row.get(0)?,
-                    bm25_score: row.get(1)?,
-                })
-            })
+            .query_map(
+                [
+                    &escaped as &dyn rusqlite::ToSql,
+                    &limit as &dyn rusqlite::ToSql,
+                ],
+                |row| {
+                    Ok(RawHit {
+                        sha: row.get(0)?,
+                        bm25_score: row.get(1)?,
+                    })
+                },
+            )
             .map_err(|e| Error::Sqlite(e.to_string()))?;
 
         let mut hits = Vec::new();
