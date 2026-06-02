@@ -302,6 +302,7 @@ fn status_renders_writer_lock_when_held() {
 }
 
 #[test]
+#[ignore = "perf budget runs only on self-hosted lane (hosted runners are too noisy); real gate lands at M3-7b via perf.cold_index_api_nodejs"]
 fn index_meets_per_commit_perf_budget() {
     // Sanity check on the SPEC §12 cold-index target ("10k commits in
     // 2 minutes"). At ~12 ms/commit that gives a 200-commit fixture a
