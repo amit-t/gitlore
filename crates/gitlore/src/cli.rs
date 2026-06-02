@@ -40,6 +40,8 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use gitlore_core::error::{Error, Result};
+use gitlore_core::index::classify_report::{ClassifyExplainReport, ClassifyGlobReport};
+use gitlore_core::index::identities_report::IdentitiesReport;
 use gitlore_core::index::indexer::{IndexReport, Indexer, RefPlan};
 use gitlore_core::index::lock::LockMode;
 use gitlore_core::index::status::StatusReport;
@@ -164,10 +166,11 @@ enum Command {
     },
 
     /// Show resolved author identities (name + email aliases).
-    Identities,
+    Identities(IdentitiesArgs),
 
-    /// Re-run heuristic commit classification over the index.
-    Classify,
+    /// Classify files (glob over the working tree, or `--explain <sha>`
+    /// over the indexed commit history).
+    Classify(ClassifyArgs),
 
     /// Print status of the local index (path, schema version, last sync).
     Status,
@@ -189,6 +192,31 @@ struct IndexArgs {
     /// concurrent writer. Defaults to waiting (kernel-level blocking).
     #[arg(long)]
     no_wait: bool,
+}
+
+/// `gitlore identities` arguments (SPEC-001 §4.1).
+#[derive(Debug, clap::Args)]
+struct IdentitiesArgs {
+    /// Include identities flagged as bots (default: hidden).
+    #[arg(long)]
+    include_bots: bool,
+}
+
+/// `gitlore classify` arguments (SPEC-001 §4.1 / §4.4).
+///
+/// Either a positional `<glob>` over `git ls-files` *or* the
+/// `--explain <sha>` flag, never both.
+#[derive(Debug, clap::Args)]
+struct ClassifyArgs {
+    /// Glob pattern (matched against repo-relative paths returned by
+    /// `git ls-files`). Optional — required when `--explain` is not set.
+    #[arg(conflicts_with = "explain")]
+    glob: Option<String>,
+
+    /// Classify every file recorded in `commits.files_changed` for the
+    /// given SHA (or unique prefix) instead of walking the working tree.
+    #[arg(long, value_name = "SHA")]
+    explain: Option<String>,
 }
 
 /// `gitlore config` sub-actions.
@@ -229,8 +257,8 @@ impl Command {
                 ConfigAction::Set { .. } => "config set".into(),
                 ConfigAction::List => "config list".into(),
             },
-            Command::Identities => "identities".into(),
-            Command::Classify => "classify".into(),
+            Command::Identities(_) => "identities".into(),
+            Command::Classify(_) => "classify".into(),
             Command::Status => "status".into(),
         }
     }
@@ -264,6 +292,8 @@ fn dispatch(cmd: &Command, json: bool) -> Result<()> {
     match cmd {
         Command::Index(args) => run_index(args, json),
         Command::Status => run_status(json),
+        Command::Identities(args) => run_identities(args, json),
+        Command::Classify(args) => run_classify(args, json),
         other => Err(Error::Unimplemented {
             subcommand: other.name(),
         }),
@@ -311,6 +341,89 @@ fn run_status(json: bool) -> Result<()> {
     let report = StatusReport::read(&cwd, &provider)?;
     emit_status(&report, json);
     Ok(())
+}
+
+/// Handle `gitlore identities [--include-bots]` — read-only SQLite
+/// scan over the resolved-identity table.
+fn run_identities(args: &IdentitiesArgs, json: bool) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let provider = gitlore_core::git::cli::GitCliProvider::new(cwd.clone());
+    let report = IdentitiesReport::read(&cwd, &provider, args.include_bots)?;
+    emit_identities(&report, json);
+    Ok(())
+}
+
+/// Handle `gitlore classify [<glob>] [--explain <sha>]`.
+///
+/// Two modes (mutually exclusive per [`ClassifyArgs`]):
+///
+/// * `<glob>` — walk `git ls-files -z`, apply the glob, hand the matched
+///   path list to [`ClassifyGlobReport::for_paths`] (which loads the
+///   embedded defaults + ecosystem overlays for `cwd` and runs the
+///   classifier once per path).
+/// * `--explain <sha>` — read `commits.files_changed` for the supplied
+///   SHA (or unique prefix) via [`ClassifyExplainReport::read_for_sha`]
+///   and classify each recorded path.
+///
+/// Without either argument, returns [`Error::Unimplemented`] under the
+/// `"classify"` subcommand name so the JSON envelope is stable.
+fn run_classify(args: &ClassifyArgs, json: bool) -> Result<()> {
+    let cwd = env::current_dir()?;
+
+    if let Some(sha) = &args.explain {
+        let provider = gitlore_core::git::cli::GitCliProvider::new(cwd.clone());
+        let report = ClassifyExplainReport::read_for_sha(&cwd, &provider, sha)?;
+        emit_classify_explain(&report, json);
+        return Ok(());
+    }
+
+    let glob = match &args.glob {
+        Some(g) => g.clone(),
+        None => {
+            return Err(Error::Unimplemented {
+                subcommand: "classify".into(),
+            });
+        }
+    };
+
+    let compiled = globset::Glob::new(&glob)
+        .map_err(|e| {
+            Error::Io(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                format!("invalid glob `{glob}`: {e}"),
+            ))
+        })?
+        .compile_matcher();
+
+    let paths = list_files(&cwd)?;
+    let matched: Vec<String> = paths.into_iter().filter(|p| compiled.is_match(p)).collect();
+    let report = ClassifyGlobReport::for_paths(&cwd, &glob, &matched)?;
+    emit_classify_glob(&report, json);
+    Ok(())
+}
+
+/// Shell out to `git ls-files -z` from `cwd`. NUL-separated so paths
+/// with whitespace or newlines parse unambiguously. The subcommand is
+/// in the M3-1 read-only allowlist (`tests/no_git_write_subcommand.rs`).
+fn list_files(cwd: &std::path::Path) -> Result<Vec<String>> {
+    let output = std::process::Command::new("git")
+        .arg("ls-files")
+        .arg("-z")
+        .current_dir(cwd)
+        .output()
+        .map_err(Error::Io)?;
+    if !output.status.success() {
+        return Err(Error::Git {
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+            code: output.status.code().unwrap_or(-1),
+        });
+    }
+    Ok(output
+        .stdout
+        .split(|b| *b == 0)
+        .filter(|s| !s.is_empty())
+        .map(|s| String::from_utf8_lossy(s).into_owned())
+        .collect())
 }
 
 /// One-line-per-second stderr progress printer for the indexer walk.
@@ -499,6 +612,99 @@ fn emit_status(report: &StatusReport, json: bool) {
             None => {
                 let _ = writeln!(stdout, "writer_lock: (none)");
             }
+        }
+    }
+}
+
+fn emit_identities(report: &IdentitiesReport, json: bool) {
+    if json {
+        let rows: Vec<Value> = report
+            .identities
+            .iter()
+            .map(|e| {
+                json!({
+                    "canonical_name": e.canonical_name,
+                    "canonical_email": e.canonical_email,
+                    "aliases": e.aliases,
+                    "is_bot": e.is_bot,
+                    "commit_count": e.commit_count,
+                })
+            })
+            .collect();
+        let envelope = json!({
+            "clustered_count": report.clustered_count,
+            "raw_count": report.raw_count,
+            "identities": rows,
+        });
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(
+            stdout,
+            "{} clustered identities ({} raw aliases)",
+            report.clustered_count, report.raw_count,
+        );
+        for e in &report.identities {
+            let bot = if e.is_bot { " [bot]" } else { "" };
+            let _ = writeln!(
+                stdout,
+                "  {} <{}>{}\taliases={}\tcommits={}",
+                e.canonical_name, e.canonical_email, bot, e.aliases, e.commit_count,
+            );
+        }
+    }
+}
+
+fn emit_classify_glob(report: &ClassifyGlobReport, json: bool) {
+    if json {
+        let rows: Vec<Value> = report
+            .matched_files
+            .iter()
+            .map(|f| {
+                json!({
+                    "path": f.path,
+                    "category": f.category,
+                })
+            })
+            .collect();
+        let envelope = json!({
+            "glob": report.glob,
+            "matched_files": rows,
+            "category": report.category,
+        });
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let mut stdout = io::stdout().lock();
+        for f in &report.matched_files {
+            let _ = writeln!(stdout, "{}\t{}", f.path, f.category);
+        }
+    }
+}
+
+fn emit_classify_explain(report: &ClassifyExplainReport, json: bool) {
+    if json {
+        let rows: Vec<Value> = report
+            .files
+            .iter()
+            .map(|f| {
+                json!({
+                    "path": f.path,
+                    "category": f.category,
+                })
+            })
+            .collect();
+        let envelope = json!({
+            "sha": report.sha,
+            "files": rows,
+        });
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let mut stdout = io::stdout().lock();
+        for f in &report.files {
+            let _ = writeln!(stdout, "{}\t{}", f.path, f.category);
         }
     }
 }
