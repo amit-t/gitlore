@@ -63,7 +63,9 @@ use crate::index::identity::{
 use crate::index::lock::{
     acquire, wal_checkpoint_if_large, LockMode, WriterLock, DEFAULT_WAL_CHECKPOINT_THRESHOLD_BYTES,
 };
-use crate::index::schema::{serialize_file_changes, serialize_string_list, FileChangeRecord};
+use crate::index::schema::{
+    parse_file_changes, serialize_file_changes, serialize_string_list, FileChangeRecord,
+};
 use crate::index::storage::resolve_index_path;
 
 /// Commits per `BEGIN`/`COMMIT` transaction (ADR-004 §4.5).
@@ -84,6 +86,18 @@ pub const WATERMARK_KEY: &str = "refs_watermark";
 /// Regex to strip conventional commit prefix (e.g., "feat:", "fix(scope):").
 /// Matches type optionally followed by (scope) and a colon/space.
 pub const CONVENTIONAL_COMMIT_PREFIX_REGEX: &str = r"^[a-z]+(\([^)]+\))?:\s+";
+
+/// Compiled conventional-commit-prefix regex (hoisted out of the indexer
+/// hot loop per `clippy::regex_creation_in_loops`).
+static CC_PREFIX_RE: std::sync::LazyLock<Regex> = std::sync::LazyLock::new(|| {
+    Regex::new(CONVENTIONAL_COMMIT_PREFIX_REGEX).expect("static conventional commit regex")
+});
+
+/// `index_state` key under which the FTS5 population flag is stored.
+pub const FTS5_POPULATED_KEY: &str = "fts5_populated";
+
+/// Row chunk size for FTS5 backfill (SELECT-then-INSERT, no git walk).
+const FTS5_BACKFILL_CHUNK_SIZE: usize = 5000;
 
 /// Output of [`Indexer::dry_run`] — ref enumeration plus a deduplicated
 /// commit estimate.
@@ -192,6 +206,7 @@ impl Indexer {
             self.detect_reverts(&touched_shas)?;
         }
         self.prune_orphans()?;
+        self.backfill_fts_if_needed()?;
         self.persist_watermark(&watermark)?;
         Ok(IndexReport {
             commits_indexed,
@@ -216,6 +231,7 @@ impl Indexer {
             self.detect_reverts(&touched_shas)?;
         }
         self.prune_orphans()?;
+        self.backfill_fts_if_needed()?;
         self.persist_watermark(&watermark)?;
         Ok(IndexReport {
             commits_indexed,
@@ -559,20 +575,12 @@ impl Indexer {
                     };
 
                     // Strip conventional commit prefix from subject for FTS
-                    let cc_regex = Regex::new(CONVENTIONAL_COMMIT_PREFIX_REGEX)
-                        .expect("static conventional commit regex");
-                    let subject_stripped = cc_regex.replace(&c.subject, "").to_string();
+                    let subject_stripped = CC_PREFIX_RE.replace(&c.subject, "").to_string();
 
                     // Insert into commits_fts for full-text search
                     tx.execute(
                         INSERT_COMMIT_FTS_SQL,
-                        params![
-                            sha_str,
-                            subject_stripped,
-                            c.body,
-                            expanded,
-                            paths_capped,
-                        ],
+                        params![sha_str, subject_stripped, c.body, expanded, paths_capped,],
                     )
                     .map_err(|e| Error::Sqlite(e.to_string()))?;
 
@@ -761,6 +769,134 @@ impl Indexer {
                 "INSERT INTO index_state (key, value) VALUES (?1, ?2) \
                  ON CONFLICT(key) DO UPDATE SET value = excluded.value",
                 params![WATERMARK_KEY, payload],
+            )
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
+        Ok(())
+    }
+
+    /// Backfill FTS5 index from existing commits if not yet populated.
+    ///
+    /// Checks `index_state.fts5_populated`; if `'false'`, reads commits in
+    /// 5000-row chunks and inserts into `commits_fts` via SELECT-then-INSERT
+    /// (no git subprocess walk). Emits tracing events and flips the flag to
+    /// `'true'` on completion per TDD-001 §2.2.
+    fn backfill_fts_if_needed(&mut self) -> Result<()> {
+        // Check if FTS5 is already populated
+        let populated: Option<String> = self
+            .conn
+            .query_row(
+                "SELECT value FROM index_state WHERE key = ?1",
+                params![FTS5_POPULATED_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .ok();
+
+        if populated.as_deref() == Some("true") {
+            return Ok(());
+        }
+
+        tracing::debug!("starting FTS5 backfill");
+
+        // Count total commits for progress reporting
+        let total: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM commits", [], |row| row.get(0))
+            .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+        if total == 0 {
+            // No commits to backfill; mark as populated and return
+            self.set_fts5_populated(true)?;
+            return Ok(());
+        }
+
+        let mut offset: i64 = 0;
+        let mut backfilled: i64 = 0;
+
+        loop {
+            // SELECT chunk of commits
+            let sql = "SELECT sha, subject, body, expanded, files_changed FROM commits LIMIT ?1 OFFSET ?2";
+            let chunk_data = {
+                let mut stmt = self
+                    .conn
+                    .prepare(sql)
+                    .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+                let rows = stmt
+                    .query_map(params![FTS5_BACKFILL_CHUNK_SIZE as i64, offset], |row| {
+                        let sha: String = row.get(0)?;
+                        let subject: String = row.get(1)?;
+                        let body: String = row.get(2)?;
+                        let expanded: String = row.get(3)?;
+                        let files_changed_json: String = row.get(4)?;
+                        Ok((sha, subject, body, expanded, files_changed_json))
+                    })
+                    .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+                let mut data = Vec::new();
+                for row in rows {
+                    data.push(row.map_err(|e| Error::Sqlite(e.to_string()))?);
+                }
+                data
+            };
+
+            if chunk_data.is_empty() {
+                break;
+            }
+
+            let chunk_size = chunk_data.len();
+
+            // INSERT into commits_fts
+            let tx = self
+                .conn
+                .transaction()
+                .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+            for (sha, subject, body, expanded, files_changed_json) in chunk_data {
+                // Extract paths from files_changed JSON for the paths column
+                let file_records = parse_file_changes(&files_changed_json);
+                let paths: Vec<String> = file_records.iter().map(|f| f.path.clone()).collect();
+                let paths_json = serialize_string_list(&paths);
+
+                tx.execute(
+                    "INSERT INTO commits_fts (sha, subject, body, expanded, paths) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    params![sha, subject, body, expanded, paths_json],
+                )
+                .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+                backfilled += 1;
+            }
+
+            tx.commit().map_err(|e| Error::Sqlite(e.to_string()))?;
+
+            tracing::debug!(
+                chunk_size,
+                total_backfilled = backfilled,
+                total_commits = total,
+                "gitlore_core::index::fts5_backfill_chunk"
+            );
+
+            offset += FTS5_BACKFILL_CHUNK_SIZE as i64;
+        }
+
+        tracing::debug!(
+            total_backfilled = backfilled,
+            "gitlore_core::index::fts5_backfilled"
+        );
+
+        // Mark as populated
+        self.set_fts5_populated(true)?;
+
+        Ok(())
+    }
+
+    /// Set the FTS5 populated flag in index_state.
+    fn set_fts5_populated(&self, populated: bool) -> Result<()> {
+        let value = if populated { "true" } else { "false" };
+        self.conn
+            .execute(
+                "INSERT INTO index_state (key, value) VALUES (?1, ?2) \
+                 ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+                params![FTS5_POPULATED_KEY, value],
             )
             .map_err(|e| Error::Sqlite(e.to_string()))?;
         Ok(())
@@ -1026,7 +1162,8 @@ const INSERT_COMMIT_SQL: &str = "INSERT INTO commits ( \
     migration_files_changed = excluded.migration_files_changed, \
     updated_at = excluded.updated_at";
 
-const INSERT_COMMIT_FTS_SQL: &str = "INSERT OR REPLACE INTO commits_fts (sha, subject, body, expanded, paths) \
+const INSERT_COMMIT_FTS_SQL: &str =
+    "INSERT OR REPLACE INTO commits_fts (sha, subject, body, expanded, paths) \
                                     VALUES (?1, ?2, ?3, ?4, ?5)";
 
 #[cfg(test)]

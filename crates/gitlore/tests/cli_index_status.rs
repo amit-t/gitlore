@@ -138,7 +138,7 @@ fn index_then_status_round_trips() {
         v["db_size_bytes"].as_u64().unwrap_or(0) > 0,
         "db_size_bytes should be populated"
     );
-    assert_eq!(v["schema_version"].as_u64(), Some(2));
+    assert_eq!(v["schema_version"].as_u64(), Some(3));
     assert_eq!(v["embeddings_enabled"].as_bool(), Some(false));
     assert!(
         v["model"].is_null(),
