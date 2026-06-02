@@ -43,4 +43,3 @@ pub use config::{
     RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
 };
 pub use log::{init_logging, LogGuard, LogLevel};
-pub use search::{score, score_with_system_time};
