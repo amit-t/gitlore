@@ -17,13 +17,23 @@
 //!   `Unimplemented` error code per SPEC §4.3. We still invoke them: an
 //!   `Unimplemented` error code is **not** an exemption from the RO contract,
 //!   it's the contract's strongest form (zero side effects).
-//! * **M3:** once the SQLite indexer lands, the full AC-RO matrix lights up.
-//!   `index` becomes the highest-risk surface because it is the only command
-//!   that *opens a write handle anywhere* (to the per-repo index in
-//!   `<common-dir>/gitlore/`, never the worktree). The assertions below
-//!   already cover that case: any byte changing inside the worktree fails the
-//!   test, whether it came from the indexer, a stray `git gc`, or anything
-//!   else.
+//! * **M3 (current):** the SQLite indexer (M3-6) and the four wired CLI
+//!   surfaces — `index`, `status`, `identities`, `classify` — light up the
+//!   full AC-RO matrix. `index` is the highest-risk surface because it is
+//!   the only command that *opens a write handle anywhere* (to the per-repo
+//!   index in `<common-dir>/gitlore/`, never the worktree). Two additional
+//!   checks layer on top of the snapshot diff:
+//!     1. The fixture is **pre-indexed in a writable scratch dir** before
+//!        the RO flip, so `identities` / `classify` / `status` have data to
+//!        read after lockdown.
+//!     2. Every gitlore invocation runs under a **`PATH`-shimmed `git`**
+//!        (the M3-1 contract verifier, mirrored from
+//!        `gitlore-core/tests/no_git_write_subcommand.rs`). The shim logs
+//!        every `git` argv to a file; after each subcommand the log is
+//!        scanned for write-side subcommands (`update-ref`, `add`, `commit`,
+//!        `push`, `fetch`, `checkout`, `gc`, `reset`, `merge`, `rebase`) and
+//!        the test fails on any hit. AC-RO-1 and AC-RO-2 are closed across
+//!        the M3 CLI surface.
 //!
 //! ## Why a separate RO mount
 //!
@@ -270,25 +280,194 @@ fn assert_snapshots_equal(before: &Snapshot, after: &Snapshot, context: &str) {
 }
 
 // ---------------------------------------------------------------------------
-// Subcommand exercise. M1 surfaces are listed explicitly; expand as new
-// commands gain M3+ implementations. We treat every command as a candidate
-// RO-contract violator, including --help/--version (which historically can
-// touch ~/.config or write a marker file in misbehaving binaries).
+// PATH-shim wrapper for `git`. Mirrors the M3-1 contract verifier in
+// `gitlore-core/tests/no_git_write_subcommand.rs`: a shell script logs argv
+// (one tab-separated line per invocation) then `exec`s the real git binary,
+// so child gitlore processes still observe real git behaviour while the
+// test can introspect every subcommand that was issued.
+// ---------------------------------------------------------------------------
+
+/// Write-side `git` subcommands that must never appear in the shim log
+/// during any RO subcommand exercise (per task M3-7f).
+const FORBIDDEN_GIT_SUBCOMMANDS: &[&str] = &[
+    "update-ref",
+    "add",
+    "commit",
+    "push",
+    "fetch",
+    "checkout",
+    "gc",
+    "reset",
+    "merge",
+    "rebase",
+];
+
+/// RAII shim: owns a tempdir containing `bin/git` (a shell wrapper) and the
+/// argv log file. Drop tears the tempdir down; callers prepend `bin/` to
+/// child `PATH` via [`Self::path_prefix`].
+struct GitShim {
+    bin_dir: PathBuf,
+    log_path: PathBuf,
+    _scratch: TempDir,
+}
+
+impl GitShim {
+    fn install() -> Self {
+        let scratch = tempfile::Builder::new()
+            .prefix("gitlore-ro-shim-")
+            .tempdir()
+            .expect("create shim scratch");
+        let bin_dir = scratch.path().join("bin");
+        let log_path = scratch.path().join("git-argv.log");
+        fs::create_dir_all(&bin_dir).expect("create shim bin dir");
+        // Touch the log so the very first `truncate_log` call can rely on
+        // the path existing.
+        fs::write(&log_path, b"").expect("touch shim log");
+
+        let real_git = find_real_git();
+        let script = format!(
+            "#!/bin/sh\n\
+             # M3-7f read-only test shim. Log argv (tab-separated) then exec real git.\n\
+             {{\n\
+             \tprintf '%s' \"$0\"\n\
+             \tfor a in \"$@\"; do printf '\\t%s' \"$a\"; done\n\
+             \tprintf '\\n'\n\
+             }} >> {log}\n\
+             exec {real} \"$@\"\n",
+            log = sh_quote(&log_path),
+            real = sh_quote(&real_git),
+        );
+        let shim_path = bin_dir.join("git");
+        fs::write(&shim_path, script).expect("write shim script");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mut perm = fs::metadata(&shim_path).expect("stat shim").permissions();
+            perm.set_mode(0o755);
+            fs::set_permissions(&shim_path, perm).expect("chmod shim");
+        }
+        Self {
+            bin_dir,
+            log_path,
+            _scratch: scratch,
+        }
+    }
+
+    /// Clear the argv log between subcommand invocations so each assertion
+    /// only sees git calls issued by the current `gitlore` run.
+    fn truncate_log(&self) {
+        fs::write(&self.log_path, b"").expect("truncate shim log");
+    }
+
+    /// Return any [`FORBIDDEN_GIT_SUBCOMMANDS`] entries observed in the log
+    /// since the last [`Self::truncate_log`]. Empty vec means clean.
+    fn forbidden_subcommands_seen(&self) -> Vec<String> {
+        read_subcommands(&self.log_path)
+            .into_iter()
+            .filter(|s| FORBIDDEN_GIT_SUBCOMMANDS.iter().any(|f| *f == s))
+            .collect()
+    }
+
+    /// Build a `PATH` value with the shim's `bin/` prepended to the current
+    /// process's `PATH`. Caller passes this verbatim to `Command::env`.
+    fn path_prefix(&self) -> OsString {
+        let mut new_path = OsString::from(&self.bin_dir);
+        if let Some(existing) = std::env::var_os("PATH") {
+            new_path.push(":");
+            new_path.push(&existing);
+        }
+        new_path
+    }
+}
+
+/// Locate the real `git` binary so the shim can `exec` it. Avoid relying on
+/// the test's PATH lookup once the shim is installed; probe well-known
+/// system paths first, then fall back to a PATH scan done *before* PATH is
+/// shimmed in the caller.
+fn find_real_git() -> PathBuf {
+    for candidate in [
+        "/usr/bin/git",
+        "/usr/local/bin/git",
+        "/opt/homebrew/bin/git",
+    ] {
+        let p = PathBuf::from(candidate);
+        if p.is_file() {
+            return p;
+        }
+    }
+    if let Some(path) = std::env::var_os("PATH") {
+        for dir in std::env::split_paths(&path) {
+            let candidate = dir.join("git");
+            if candidate.is_file() {
+                return candidate;
+            }
+        }
+    }
+    panic!("could not locate a real git binary on this system");
+}
+
+/// Single-quote a path for safe interpolation into a `/bin/sh` script.
+fn sh_quote(p: &Path) -> String {
+    let s = p.to_string_lossy();
+    let escaped = s.replace('\'', "'\\''");
+    format!("'{escaped}'")
+}
+
+/// Parse the shim log into a list of issued subcommands. Walks past
+/// well-known global flags (`-C <dir>`, `--git-dir <p>`, `--work-tree <p>`,
+/// `--no-pager`, …) and returns the first non-flag argv element. The
+/// flag-form pseudo-subcommands (`--version`, `--exec-path`, `--html-path`)
+/// are returned verbatim so the test still sees them.
+fn read_subcommands(log_path: &Path) -> Vec<String> {
+    let text = fs::read_to_string(log_path).unwrap_or_default();
+    text.lines()
+        .filter_map(|line| {
+            let mut parts = line.split('\t');
+            // First field is $0 (the shim path). Skip it.
+            parts.next()?;
+            let mut iter = parts.peekable();
+            while let Some(arg) = iter.peek() {
+                let a = *arg;
+                if a == "--version" || a == "--exec-path" || a == "--html-path" {
+                    return Some(a.to_string());
+                }
+                if a.starts_with('-') {
+                    let flag = iter.next().unwrap();
+                    if flag == "-C" || flag == "--git-dir" || flag == "--work-tree" {
+                        iter.next();
+                    }
+                    continue;
+                }
+                break;
+            }
+            iter.next().map(|s| s.to_string())
+        })
+        .collect()
+}
+
+// ---------------------------------------------------------------------------
+// Subcommand exercise. Covers (a) every M3-wired surface (`index`, `status`,
+// `identities`, `classify`) in both plain and `--json` form, plus
+// `identities --include-bots` and `classify --explain HEAD`, and (b) the
+// remaining clap-derive stubs that still return `Unimplemented`. Every
+// command is treated as a candidate RO-contract violator, including
+// `--help` / `--version` (which historically can touch ~/.config or write
+// a marker file in misbehaving binaries).
 // ---------------------------------------------------------------------------
 
 /// The argv vectors we run per subcommand. Kept as `Vec<Vec<&'static str>>` so
-/// adding a new M3+ command is a one-line append. Long-running commands
-/// (`index`) get a `--dry-run` flag once it exists; until then, the M1 stub
-/// exits with `Unimplemented` before doing anything observable.
+/// adding a new M-something command is a one-line append. The function name
+/// is a historical artefact from the M1 stub era; despite the name, the list
+/// now exercises every wired M3 surface.
 fn m1_subcommand_invocations() -> Vec<Vec<&'static str>> {
     vec![
+        // Help / version (no subcommand).
         vec!["--help"],
         vec!["--version"],
         vec!["help"],
-        // Stub subcommands per SPEC-001 §4.1 / fix_plan line 12. Each is
-        // expected to exit with the stable "Unimplemented" error at M1.
-        vec!["status"],
-        vec!["index"],
+        // Remaining stub subcommands per SPEC-001 §4.1. Each exits with the
+        // stable "Unimplemented" error until its handler lands; the RO
+        // contract still applies (zero worktree writes, no write-side git).
         vec!["search", "two"],
         vec!["story", "--since", "HEAD~2"],
         vec!["risk", "--since", "HEAD~2"],
@@ -297,25 +476,38 @@ fn m1_subcommand_invocations() -> Vec<Vec<&'static str>> {
         vec!["between", "HEAD~2", "HEAD"],
         vec!["setup-embeddings"],
         vec!["config", "get", "tui.theme"],
-        vec!["identities"],
-        vec!["classify"],
-        // --json flag is plumbed on every subcommand per fix_plan line 12;
-        // probe one as a smoke check that the global flag doesn't write.
+        // M3 wired surfaces (M3-7a `index` + `status`, M3-7b `identities`
+        // + `classify`). Each is exercised in both plain and `--json`
+        // form so the global `--json` flag is verified RO-clean too.
+        vec!["status"],
         vec!["status", "--json"],
+        vec!["index"],
+        vec!["index", "--json"],
+        vec!["identities"],
+        vec!["identities", "--json"],
+        vec!["identities", "--include-bots"],
+        vec!["identities", "--include-bots", "--json"],
+        vec!["classify", "**/*.rs"],
+        vec!["classify", "**/*.rs", "--json"],
+        vec!["classify", "--explain", "HEAD"],
+        vec!["classify", "--explain", "HEAD", "--json"],
     ]
 }
 
-fn run_gitlore(repo: &Path, args: &[&str]) -> std::process::Output {
+/// Spawn the compiled `gitlore` binary against `repo`. When a [`GitShim`] is
+/// supplied, its `bin/` directory is prepended to `PATH` so every inner `git`
+/// call routes through the argv-logging shim.
+fn run_gitlore(repo: &Path, args: &[&str], shim: Option<&GitShim>) -> std::process::Output {
     let bin = cargo_bin("gitlore");
-    Command::new(&bin)
-        .current_dir(repo)
+    let mut cmd = Command::new(&bin);
+    cmd.current_dir(repo)
         .args(args)
         // Isolate from the dev's real home: any code path that accidentally
         // reads/writes ~/.config/gitlore should fail closed instead of
         // mutating the host. We rebind XDG_* to a throwaway dir inside the
         // tempdir's *parent*, not the worktree itself, because the worktree
-        // is now RO and gitlore would legitimately need to write its index
-        // and config somewhere outside it.
+        // is RO under test and gitlore would legitimately need to write its
+        // index and config somewhere outside it.
         .env("HOME", repo.parent().unwrap_or(repo))
         .env(
             "XDG_CONFIG_HOME",
@@ -329,11 +521,14 @@ fn run_gitlore(repo: &Path, args: &[&str]) -> std::process::Output {
             "XDG_CACHE_HOME",
             repo.parent().unwrap_or(repo).join("xdg-cache"),
         )
-        // No interactive prompts: every M1 subcommand must run unattended.
+        // No interactive prompts: every subcommand must run unattended.
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .output()
+        .stderr(Stdio::piped());
+    if let Some(shim) = shim {
+        cmd.env("PATH", shim.path_prefix());
+    }
+    cmd.output()
         .unwrap_or_else(|e| panic!("spawn gitlore {args:?}: {e}"))
 }
 
@@ -346,14 +541,38 @@ fn ro_contract_holds_across_m1_subcommands() {
     let fixture = build_fixture_repo();
     let repo = fixture.path().to_path_buf();
     let gitignore_sha_before = sha256_file(&repo.join(".gitignore"));
+
+    // Install the PATH shim before any gitlore invocation so every inner
+    // `git` call routes through the argv logger. Installing happens before
+    // pre-indexing too, but we don't inspect the log until after the RO
+    // flip — the pre-index run is allowed to use whatever read-only git
+    // surface it needs.
+    let shim = GitShim::install();
+
+    // Pre-index in a writable worktree so the M3-7b surfaces (`identities`,
+    // `classify`, `status`) have data to read once the worktree flips RO.
+    // The indexer writes into `.git/gitlore/` only; nothing under the
+    // worktree proper changes, but git itself may stat / temp-write paths
+    // outside `.git/` during its walk, so it must happen pre-lockdown.
+    let preindex = run_gitlore(&repo, &["index"], Some(&shim));
+    assert!(
+        preindex.status.success(),
+        "pre-index failed (exit={:?})\n--- stdout ---\n{}\n--- stderr ---\n{}",
+        preindex.status.code(),
+        String::from_utf8_lossy(&preindex.stdout),
+        String::from_utf8_lossy(&preindex.stderr),
+    );
+
     let snap_before = snapshot_worktree(&repo);
     let _guard = RoGuard::lock(&repo);
 
     for argv in m1_subcommand_invocations() {
-        // Exit code is intentionally not asserted: at M1 most subcommands
+        shim.truncate_log();
+
+        // Exit code is intentionally not asserted: many subcommands still
         // exit non-zero with `Unimplemented`. The contract under test is
-        // worktree immutability, not command success.
-        let out = run_gitlore(&repo, &argv);
+        // worktree immutability + no write-side git, not command success.
+        let out = run_gitlore(&repo, &argv, Some(&shim));
         // Defensive: if the binary segfaults we want a clear failure rather
         // than a silent skip.
         if let Some(code) = out.status.code() {
@@ -362,15 +581,28 @@ fn ro_contract_holds_across_m1_subcommands() {
                 "gitlore {argv:?} returned an impossible exit code {code}"
             );
         }
-        let snap_after = snapshot_worktree(&repo);
+
         let label = argv.join(" ");
+
+        // AC-RO-1 / AC-RO-2: worktree byte-identical.
+        let snap_after = snapshot_worktree(&repo);
         assert_snapshots_equal(&snap_before, &snap_after, &format!("gitlore {label}"));
+
+        // AC-RO-1: no write-side git subcommands routed through the shim.
+        let forbidden = shim.forbidden_subcommands_seen();
+        assert!(
+            forbidden.is_empty(),
+            "gitlore {label:?} invoked write-side git subcommand(s) {forbidden:?}; \
+             RO contract violated. Full shim log:\n{}",
+            fs::read_to_string(&shim.log_path).unwrap_or_default(),
+        );
     }
 
+    // AC-RO-2 (canary): .gitignore byte-stable across the whole exercise.
     let gitignore_sha_after = sha256_file(&repo.join(".gitignore"));
     assert_eq!(
         gitignore_sha_before, gitignore_sha_after,
-        "AC-RO-2: .gitignore checksum drifted during M1 CLI surface exercise"
+        "AC-RO-2: .gitignore checksum drifted during M3 CLI surface exercise"
     );
 }
 
