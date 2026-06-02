@@ -26,6 +26,8 @@
 //!   ([`index::schema`]), versioned migration runner
 //!   ([`index::migrations`]), and the index-path resolver
 //!   ([`index::storage`]). M3-2 foundation for the indexer.
+//! * [`search`] — SPEC-001 §4.3.1 search types (Query, Filters, SearchHit,
+//!   Factors, SearchMode, SearchResults, RawHit).
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
@@ -43,4 +45,7 @@ pub use config::{
     RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
 };
 pub use log::{init_logging, LogGuard, LogLevel};
-pub use search::{score, score_with_system_time};
+pub use search::{
+    score, score_with_system_time, Factors, Filters, Query, RawHit, SearchHit, SearchMode,
+    SearchResults,
+};
