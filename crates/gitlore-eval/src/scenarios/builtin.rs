@@ -19,6 +19,7 @@
 //! constructors are deliberately separate so a future caller can ask for
 //! "just the production catalog" without the stubs.
 
+use super::perf::cold_index::ColdIndexApiNodejs;
 use super::{Registry, Scenario, ScenarioReport};
 
 /// Single-string-pair stub backing every entry in [`BUILTINS`].
@@ -66,7 +67,9 @@ const BUILTINS: &[(&str, &str)] = &[
     // Risk pillar (M8).
     ("risk.spicy-boring", "M8 via TDD-003"),
     // Perf budgets — one per pillar so each milestone owns its own budget walk.
-    ("perf.cold_index_api_nodejs", "M3 via TDD-004"),
+    // `perf.cold_index_api_nodejs` is no longer a stub: it ships as
+    // `super::perf::cold_index::ColdIndexApiNodejs` and is wired into the
+    // registry directly in `with_builtin_scenarios` below.
     ("perf.search_warm", "M4 via TDD-004"),
     ("perf.story_since", "M7 via TDD-004"),
     ("perf.risk_since", "M8 via TDD-004"),
@@ -84,6 +87,10 @@ impl Registry {
         for &(name, tracking) in BUILTINS {
             r.register(Box::new(StubScenario::new(name, tracking)));
         }
+        // M3-7e: first stub replaced by a real implementation. Other
+        // perf-pillar entries stay as stubs until their owning milestone
+        // ships its own concrete scenario.
+        r.register(Box::new(ColdIndexApiNodejs));
         r
     }
 }
@@ -95,13 +102,20 @@ mod tests {
     #[test]
     fn builtin_registry_holds_every_table_entry() {
         let r = Registry::with_builtin_scenarios();
-        assert_eq!(r.len(), BUILTINS.len());
+        // BUILTINS holds only stubs; the real `perf.cold_index_api_nodejs`
+        // scenario (M3-7e) is registered on top, so the catalog is one
+        // entry larger than the stub table.
+        assert_eq!(r.len(), BUILTINS.len() + 1);
         for &(name, _) in BUILTINS {
             assert!(
                 r.get(name).is_some(),
                 "expected `{name}` registered, got None"
             );
         }
+        assert!(
+            r.get("perf.cold_index_api_nodejs").is_some(),
+            "real M3-7e perf scenario must be registered alongside the stub table"
+        );
     }
 
     #[test]

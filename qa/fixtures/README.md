@@ -26,12 +26,40 @@ gated-off private set — it simply reports "skipped".
 
 ## Status: empty by design
 
-No fixture data ships at M2. Per open question **Q6a**, Amit
+No public fixture data ships at M2. Per open question **Q6a**, Amit
 hand-labels the initial query set at M3+. Until then this directory is
 the documented contract; nothing data-bearing is committed under it.
 
-A future PR adds the first real fixture (likely the
+A future PR adds the first real public fixture (likely the
 `search.api-nodejs` labelled query set at M4) and replaces this note.
+
+## Active perf gates
+
+Perf scenarios are gated by the **private** fixture root, so the public
+hosted lane stays fast and reproducible; the self-hosted lane lights up
+the gate when the matching fixture is present.
+
+| Scenario                          | Private fixture                       | Budget        | Source                                                      |
+| --------------------------------- | ------------------------------------- | ------------- | ----------------------------------------------------------- |
+| `perf.cold_index_api_nodejs`      | `qa/fixtures-private/api-nodejs/`     | p95 < 120 s   | M3-7e — SPEC-001 §7.3 cold-index gate                       |
+
+Cold-index runs work like this:
+
+1. The scenario checks `qa/fixtures-private/api-nodejs/` via
+   `std::path::Path::new(...).is_dir()`.
+2. **Absent** → emit `passed: true` with summary
+   `"skipped: private fixture qa/fixtures-private/api-nodejs/ not present
+   (lights up on self-hosted lane)"`. No metrics.
+3. **Present** → run three cold iterations. Each iteration copies the
+   fixture into a fresh `tempfile::tempdir()`, opens the indexer
+   (`LockMode::Wait`) + drives `run_initial`, times the wall-clock,
+   drops the indexer + tempdir. The p95 (= max for n=3) must stay below
+   the budget. Metrics: `p95_ms`, `samples`, `commits_indexed`.
+
+The remaining four perf entries
+(`perf.search_warm`, `perf.story_since`, `perf.risk_since`,
+`perf.hotspots_path`) are still M2 stubs and replace their stub row
+one-for-one when their owning milestone ships.
 
 ## Layout (target — empty today)
 

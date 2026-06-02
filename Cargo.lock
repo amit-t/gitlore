@@ -1301,7 +1301,9 @@ name = "gitlore-eval"
 version = "0.0.0"
 dependencies = [
  "clap",
+ "gitlore-core",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

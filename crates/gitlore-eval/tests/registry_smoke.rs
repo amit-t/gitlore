@@ -23,6 +23,11 @@ use gitlore_eval::scenarios::Registry;
 /// the new pillar.
 const ALLOWED_PILLARS: &[&str] = &["search", "story", "risk", "perf"];
 
+/// Scenarios whose M2 stub has been replaced by a real implementation. They
+/// are exempt from the `summary.starts_with("stub:")` assertion below; their
+/// own modules carry per-scenario coverage.
+const REAL_SCENARIOS: &[&str] = &["perf.cold_index_api_nodejs"];
+
 #[test]
 fn builtin_registry_has_exactly_nine_scenarios() {
     let r = Registry::with_builtin_scenarios();
@@ -74,11 +79,21 @@ fn every_builtin_runs_and_emits_a_stub_summary() {
     // contract documented in `gitlore-eval --list`. Pairs with the per-pillar
     // dotted-name lock above so a stub introduced without a tracking tag
     // (or a stub that quietly flips to `passed: false`) is caught here.
+    //
+    // Scenarios listed in `REAL_SCENARIOS` have replaced their stub with a
+    // real implementation; this test only verifies they are still
+    // retrievable, runnable, and return a report keyed to their own name.
+    // The summary contract is enforced per-scenario in their own modules.
     let r = Registry::with_builtin_scenarios();
     for name in r.names() {
         let scenario = r.get(name).expect("listed names must be retrievable");
         let report = scenario.run();
         assert_eq!(report.scenario, name);
+
+        if REAL_SCENARIOS.contains(&name) {
+            continue;
+        }
+
         assert!(
             report.passed,
             "stub `{name}` must pass at M2 (real impl flips this when it ships)"

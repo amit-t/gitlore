@@ -13,6 +13,7 @@
 //! into CI before any concrete scenarios exist.
 
 mod builtin;
+pub mod perf;
 
 use std::collections::BTreeMap;
 
