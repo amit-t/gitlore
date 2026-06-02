@@ -18,4 +18,5 @@
 //! exit-code translation) and delegates everything else here.
 
 pub mod cli;
+pub mod output;
 pub mod tui;

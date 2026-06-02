@@ -23,18 +23,29 @@ use gitlore_eval::scenarios::Registry;
 /// the new pillar.
 const ALLOWED_PILLARS: &[&str] = &["search", "story", "risk", "perf"];
 
-/// Scenarios whose M2 stub has been replaced by a real implementation. They
+/// Scenarios whose stub has been replaced by a real implementation. They
 /// are exempt from the `summary.starts_with("stub:")` assertion below; their
 /// own modules carry per-scenario coverage.
+///
+/// M3-7e: `perf.cold_index_api_nodejs`.
+/// M4: `search.synthetic`, `search.api-nodejs`, `perf.search_warm` moved to
+///     `default_registry()` and removed from the stub table entirely.
 const REAL_SCENARIOS: &[&str] = &["perf.cold_index_api_nodejs"];
 
+/// Expected count = BUILTINS.len() + real scenarios in `with_builtin_scenarios`.
+///
+/// At M4: 6 stub entries + 1 real (cold_index) = 7.
+/// Update this constant whenever a stub is added or promoted to real.
+const EXPECTED_BUILTIN_COUNT: usize = 7;
+
 #[test]
-fn builtin_registry_has_exactly_nine_scenarios() {
+fn builtin_registry_has_expected_scenario_count() {
     let r = Registry::with_builtin_scenarios();
     assert_eq!(
         r.names().count(),
-        9,
-        "M2 stub catalog must register exactly 9 scenarios; got {}",
+        EXPECTED_BUILTIN_COUNT,
+        "builtin catalog has unexpected count; update EXPECTED_BUILTIN_COUNT and BUILTINS \
+         when adding or promoting scenarios; got {}",
         r.names().count()
     );
 }

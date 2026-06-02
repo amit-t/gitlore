@@ -119,6 +119,31 @@ jobs:
       - name: cargo test --test ro_filesystem
         run: cargo test --workspace --test ro_filesystem --locked
 
+  search-eval-smoke:
+    # Public lane smoke: runs `search.synthetic` (the 10-query public fixture)
+    # on every PR and push to main. No private fixtures needed. Lights up at M4.
+    name: search-eval-smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        rust: ["1.88"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Rust ${{ matrix.rust }}
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: eval-smoke-${{ matrix.os }}-${{ matrix.rust }}
+      - name: build gitlore-eval
+        run: cargo build -p gitlore-eval --bin gitlore-eval --locked --release
+      - name: run search.synthetic scenario
+        run: cargo run -p gitlore-eval --bin gitlore-eval --locked --release -- --scenario search.synthetic
+
   eval-regression:
     # Private lane per ADR-028.
     # Only runs on PRs explicitly labeled `tier:judgement` by a reviewer,

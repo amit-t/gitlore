@@ -159,9 +159,17 @@ impl<'a> Fts5LexicalSearch<'a> {
         let mut where_clauses = vec!["1=1".to_string()];
         let mut params = vec![];
 
-        // Build BM25 weighted match expression
+        // Build the per-column BM25 weight expression using SQLite FTS5's
+        // native weighted-rank API: bm25(table, w0, w1, ...) where weights
+        // are positional constants matching the FTS5 table column order.
+        //
+        // commits_fts column order: sha(0,UNINDEXED), subject(1), body(2),
+        // expanded(3), paths(4). The UNINDEXED sha column must have weight 0.
+        //
+        // bm25() returns negative values; best match = least-negative (closest
+        // to 0). Sorting ORDER BY score ASC puts best matches first.
         let bm25_expr = format!(
-            "(subject * {}) + (body * {}) + (expanded * {}) + (paths * {})",
+            "bm25(commits_fts, 0, {}, {}, {}, {})",
             self.bm25_weights.subject,
             self.bm25_weights.body,
             self.bm25_weights.expanded,
@@ -196,13 +204,15 @@ impl<'a> Fts5LexicalSearch<'a> {
 
         let where_clause = where_clauses.join(" AND ");
 
+        // Note: bm25() returns negative values; ORDER BY score ASC puts the
+        // best (least-negative) matches first.
         format!(
             r#"
-            SELECT c.sha, bm25(commits_fts) * ({bm25_expr}) as score
+            SELECT c.sha, {bm25_expr} as score
             FROM commits_fts
             JOIN commits c ON commits_fts.sha = c.sha
             WHERE commits_fts MATCH ? AND {where_clause}
-            ORDER BY score DESC
+            ORDER BY score ASC
             LIMIT ?
             "#
         )
@@ -376,7 +386,10 @@ mod tests {
 
         let sql = search.build_match_query(&FilterClause::default());
         assert!(sql.contains("WHERE commits_fts MATCH ? AND 1=1"));
-        assert!(sql.contains("ORDER BY score DESC"));
+        assert!(
+            sql.contains("ORDER BY score ASC"),
+            "bm25 sorts ASC (neg = better); sql={sql}"
+        );
         assert!(sql.contains("LIMIT ?"));
     }
 
@@ -464,9 +477,9 @@ mod tests {
         };
 
         let sql = search.build_match_query(&FilterClause::default());
-        assert!(sql.contains("(subject * 5)"));
-        assert!(sql.contains("(body * 2)"));
-        assert!(sql.contains("(expanded * 3)"));
-        assert!(sql.contains("(paths * 1)"));
+        assert!(
+            sql.contains("bm25(commits_fts, 0, 5, 2, 3, 1)"),
+            "sql={sql}"
+        );
     }
 }

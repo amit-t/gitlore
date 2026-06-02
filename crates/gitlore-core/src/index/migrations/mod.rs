@@ -32,7 +32,7 @@ use crate::error::{Error, Result};
 
 /// Highest schema version this binary understands. Bump alongside every
 /// new migration file.
-pub const LATEST: u32 = 3;
+pub const LATEST: u32 = 4;
 
 /// All known migrations, in ascending version order.
 ///
@@ -43,6 +43,7 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("0001_init.sql")),
     (2, include_str!("0002_identity_is_bot.sql")),
     (3, include_str!("0003_fts5_backfill_marker.sql")),
+    (4, include_str!("0004_fts5_rebuild_with_content.sql")),
 ];
 
 /// Bring `conn` up to [`LATEST`].
