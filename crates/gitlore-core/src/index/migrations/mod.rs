@@ -46,6 +46,28 @@ const MIGRATIONS: &[(u32, &str)] = &[
     (4, include_str!("0004_fts5_rebuild_with_content.sql")),
 ];
 
+/// Read the on-disk `schema_version` and return [`Error::SchemaVersionTooNew`]
+/// if it exceeds [`LATEST`]. Safe to call on a read-only connection because
+/// it never writes. Returns the current version on success.
+///
+/// Used by read-only paths (`status`, `search`) that open the database
+/// without running migrations. Callers that do run migrations (the indexer)
+/// get the same check for free inside [`migrate`].
+pub fn check_schema_version(conn: &Connection) -> Result<u32> {
+    let has_state_table = sqlite_master_has(conn, "index_state").map_err(sqlite_err)?;
+    if !has_state_table {
+        return Ok(0);
+    }
+    let current = read_schema_version(conn)?;
+    if current > LATEST {
+        return Err(Error::SchemaVersionTooNew {
+            found: current,
+            supported: LATEST,
+        });
+    }
+    Ok(current)
+}
+
 /// Bring `conn` up to [`LATEST`].
 ///
 /// Returns the schema version observable on disk after the call. On a

@@ -174,11 +174,10 @@ impl SearchState {
                     self.set_selected(0);
                 }
             }
-            Action::End => {
-                if !self.hits.is_empty() {
-                    self.set_selected(self.hits.len() - 1);
-                }
+            Action::End if !self.hits.is_empty() => {
+                self.set_selected(self.hits.len() - 1);
             }
+            Action::End => {}
             // Help, NextTab, PrevTab handled by app.rs before calling search.
             _ => {}
         }

@@ -60,15 +60,15 @@ fn run_index(repo: &Path) {
 
 /// Find the SQLite DB produced by `gitlore index` within `repo`.
 fn find_db(repo: &Path) -> std::path::PathBuf {
-    // The DB lives at `<git_common_dir>/.gitlore/index.db` or
-    // `<xdg_data_home>/gitlore/<hash>/index.db`.  We probe both typical paths.
-    let git_dir = repo.join(".git");
-    let candidate = git_dir.join(".gitlore").join("index.db");
+    // Primary: `<repo>/.git/gitlore/index.sqlite` (IndexLocation::CommonDir).
+    // Fallback: XDG data dir (IndexLocation::Xdg) — not probed here because
+    // the fixture repo is in a writable tempdir so the common-dir path always
+    // wins.  See storage::resolve_index_path for the full algorithm.
+    let candidate = repo.join(".git").join("gitlore").join("index.sqlite");
     if candidate.exists() {
         return candidate;
     }
-    // Walk the `repos/` result — the indexer writes the DB under `<common_dir>`.
-    panic!("Could not find index.db under {repo:?}");
+    panic!("Could not find index.sqlite under {repo:?}");
 }
 
 fn bump_schema_version(db_path: &Path, new_version: u64) {
@@ -94,7 +94,7 @@ fn status_json_reports_schema_version_too_new_code() {
 
     let output = StdCommand::cargo_bin("gitlore")
         .expect("bin")
-        .args(["--output-format", "json", "status"])
+        .args(["status", "--json"])
         .current_dir(repo.path())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")
@@ -126,7 +126,7 @@ fn search_json_reports_schema_version_too_new_code() {
 
     let output = StdCommand::cargo_bin("gitlore")
         .expect("bin")
-        .args(["--output-format", "json", "search", "data"])
+        .args(["search", "--json", "data"])
         .current_dir(repo.path())
         .env("GIT_CONFIG_NOSYSTEM", "1")
         .env("GIT_CONFIG_GLOBAL", "/dev/null")

@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::{Error, Result};
 use crate::git::GitProvider;
 use crate::index::indexer::{INDEX_DB_FILENAME, INDEX_LOCK_FILENAME};
+use crate::index::migrations::check_schema_version;
 use crate::index::storage::resolve_index_path;
 
 /// Snapshot of index metadata returned by [`StatusReport::read`].
@@ -91,6 +92,9 @@ impl StatusReport {
             | OpenFlags::SQLITE_OPEN_NO_MUTEX;
         let conn = Connection::open_with_flags(&db_path, flags)
             .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+        // AC-IDX-10: refuse to operate on an index written by a newer binary.
+        check_schema_version(&conn)?;
 
         let commit_count: u64 = conn
             .query_row("SELECT COUNT(*) FROM commits", [], |row| row.get(0))

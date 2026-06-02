@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use rusqlite::{Connection, OpenFlags};
 
 use crate::error::{Error, Result};
+use crate::index::migrations::check_schema_version;
 
 /// A single read-only SQLite connection shared across search calls via a mutex.
 ///
@@ -45,6 +46,9 @@ impl SearchConnPool {
         // Belt-and-suspenders: prevent any accidental writes.
         conn.execute_batch("PRAGMA query_only = 1; PRAGMA cache_size = -20000;")
             .map_err(|e| Error::Sqlite(e.to_string()))?;
+
+        // AC-IDX-10: refuse to operate on an index written by a newer binary.
+        check_schema_version(&conn)?;
 
         Ok(Self {
             conn: Mutex::new(conn),
