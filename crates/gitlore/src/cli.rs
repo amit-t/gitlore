@@ -713,6 +713,14 @@ fn emit_classify_explain(report: &ClassifyExplainReport, json: bool) {
 ///
 /// `json = false` → `error: <Display>` to stderr (plain mode, the default).
 /// `json = true`  → SPEC-001 §4.3 envelope to stdout as a single line.
+///
+/// `Error::NotARepo` is special-cased in plain mode (AC-INIT-4): the
+/// stderr line is the exact, action-bearing string
+/// `gitlore: not a git repository (run gitlore inside a repo)` so the
+/// init contract test can match on a stable, user-actionable line rather
+/// than the typed `Display` impl, which leaks the probed path. The JSON
+/// envelope is unchanged — SPEC-001 §4.3 keeps `code = "not_a_repo"` and
+/// `message` from the typed `Display`.
 fn emit_error(err: &Error, json: bool) {
     if json {
         let envelope = json!({
@@ -727,7 +735,17 @@ fn emit_error(err: &Error, json: bool) {
         let _ = writeln!(stdout, "{envelope}");
     } else {
         let mut stderr = io::stderr().lock();
-        let _ = writeln!(stderr, "error: {err}");
+        match err {
+            Error::NotARepo { .. } => {
+                let _ = writeln!(
+                    stderr,
+                    "gitlore: not a git repository (run gitlore inside a repo)"
+                );
+            }
+            _ => {
+                let _ = writeln!(stderr, "error: {err}");
+            }
+        }
     }
 }
 
