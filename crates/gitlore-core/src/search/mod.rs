@@ -1,8 +1,13 @@
-//! Search-related functionality for gitlore-core.
+//! Search module (TDD-001 §2.1 + SPEC-001 §4.3.1).
 //!
-//! This module contains scoring and ranking functions used in commit search,
-//! including recency-based time decay.
+//! Foundational types and scoring helpers for the M4 lexical search engine:
+//!
+//! * [`recency`] — half-life exponential decay scoring.
+//! * [`path_relevance`] — directory-prefix path relevance scoring.
+//!
+//! Both submodules expose their own `score` function; callers use the
+//! qualified path (`search::recency::score` / `search::path_relevance::score`)
+//! to disambiguate.
 
+pub mod path_relevance;
 pub mod recency;
-
-pub use recency::{score, score_with_system_time};
