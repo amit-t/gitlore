@@ -81,6 +81,10 @@ pub const INDEX_LOCK_FILENAME: &str = "index.lock";
 /// `index_state` key under which the per-ref watermark JSON is stored.
 pub const WATERMARK_KEY: &str = "refs_watermark";
 
+/// Regex to strip conventional commit prefix (e.g., "feat:", "fix(scope):").
+/// Matches type optionally followed by (scope) and a colon/space.
+pub const CONVENTIONAL_COMMIT_PREFIX_REGEX: &str = r"^[a-z]+(\([^)]+\))?:\s+";
+
 /// Output of [`Indexer::dry_run`] — ref enumeration plus a deduplicated
 /// commit estimate.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -541,6 +545,37 @@ impl Indexer {
                     .map_err(|e| Error::Sqlite(e.to_string()))?;
                     touched.push(sha_str.clone());
 
+                    // Build paths string: space-joined file paths, capped at 2KB with "…" suffix
+                    let paths: String = c
+                        .files_changed
+                        .iter()
+                        .map(|f| f.path.as_str())
+                        .collect::<Vec<&str>>()
+                        .join(" ");
+                    let paths_capped = if paths.len() > 2048 {
+                        format!("{}…", &paths[..2048])
+                    } else {
+                        paths
+                    };
+
+                    // Strip conventional commit prefix from subject for FTS
+                    let cc_regex = Regex::new(CONVENTIONAL_COMMIT_PREFIX_REGEX)
+                        .expect("static conventional commit regex");
+                    let subject_stripped = cc_regex.replace(&c.subject, "").to_string();
+
+                    // Insert into commits_fts for full-text search
+                    tx.execute(
+                        INSERT_COMMIT_FTS_SQL,
+                        params![
+                            sha_str,
+                            subject_stripped,
+                            c.body,
+                            expanded,
+                            paths_capped,
+                        ],
+                    )
+                    .map_err(|e| Error::Sqlite(e.to_string()))?;
+
                     if let Some(refs_for_sha) = sha_to_refs.get(&sha_str) {
                         for (name, kind) in refs_for_sha {
                             let kind_str = match kind {
@@ -828,6 +863,9 @@ const INSERT_COMMIT_SQL: &str = "INSERT INTO commits ( \
     fixture_files_changed = excluded.fixture_files_changed, \
     migration_files_changed = excluded.migration_files_changed, \
     updated_at = excluded.updated_at";
+
+const INSERT_COMMIT_FTS_SQL: &str = "INSERT OR REPLACE INTO commits_fts (sha, subject, body, expanded, paths) \
+                                    VALUES (?1, ?2, ?3, ?4, ?5)";
 
 #[cfg(test)]
 mod tests {
