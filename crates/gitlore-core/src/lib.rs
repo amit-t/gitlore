@@ -36,9 +36,11 @@ pub mod error;
 pub mod git;
 pub mod index;
 pub mod log;
+pub mod search;
 
 pub use config::{
     Bm25Weights, ClassificationConfig, Config, ConfigError, IndexConfig, OwnershipConfig,
     RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
 };
 pub use log::{init_logging, LogGuard, LogLevel};
+pub use search::{score, score_with_system_time};
