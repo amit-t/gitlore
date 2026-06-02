@@ -74,6 +74,61 @@ pub fn top_k_precision(_relevant_ranks: &[Option<usize>], _k: usize) -> MetricRe
     })
 }
 
+/// Top-K precision over SHA-labelled search result lists (M4 / TDD-001).
+///
+/// Returns the fraction of queries (in `[0.0, 1.0]`) for which the
+/// `expected_sha` appears in the first `k` elements of the corresponding
+/// `result_list`.
+///
+/// * `expected_shas[i]` — the ground-truth SHA for query `i`.
+/// * `result_lists[i]` — the ordered slice of SHAs returned by the engine
+///   for query `i` (highest-score first).
+/// * `k` — the rank cutoff.
+///
+/// Returns `0.0` when `expected_shas` is empty (no queries = 0% precision
+/// by convention).
+pub fn search_top_k_precision(expected_shas: &[&str], result_lists: &[&[&str]], k: usize) -> f32 {
+    if expected_shas.is_empty() {
+        return 0.0;
+    }
+    assert_eq!(
+        expected_shas.len(),
+        result_lists.len(),
+        "expected_shas and result_lists must have the same length"
+    );
+    let hits = expected_shas
+        .iter()
+        .zip(result_lists.iter())
+        .filter(|(expected, results)| results.iter().take(k).any(|sha| sha == *expected))
+        .count();
+    hits as f32 / expected_shas.len() as f32
+}
+
+/// Nearest-rank percentile over a slice of `u128` sample values.
+///
+/// Uses the nearest-rank method: sorts a copy of `samples` in ascending order
+/// and returns the element at position `ceil(p/100 * N) - 1` (0-indexed).
+///
+/// * `samples` — the sample set (must be non-empty).
+/// * `p` — percentile in `[0, 100]`.
+///
+/// # Panics
+/// Panics if `samples` is empty or `p > 100`.
+pub fn percentile(samples: &[u128], p: u8) -> u128 {
+    assert!(!samples.is_empty(), "percentile: samples must be non-empty");
+    assert!(p <= 100, "percentile: p must be in [0, 100], got {p}");
+    let mut sorted = samples.to_vec();
+    sorted.sort_unstable();
+    let n = sorted.len();
+    if p == 0 {
+        return sorted[0];
+    }
+    // Nearest-rank: ceil(p/100 * N), 1-indexed → 0-indexed.
+    let rank = (p as usize * n).div_ceil(100);
+    let idx = rank.min(n).saturating_sub(1);
+    sorted[idx]
+}
+
 /// Jaccard similarity `|A ∩ B| / |A ∪ B|`.
 ///
 /// Returns a value in `[0.0, 1.0]`. TDD-002 pins behaviour for the empty
@@ -158,5 +213,86 @@ mod tests {
             tracking: "y",
         };
         assert_error(&e);
+    }
+
+    // --- search_top_k_precision ---
+
+    #[test]
+    fn search_top_k_precision_all_hits() {
+        let expected = ["sha1", "sha2"];
+        let results: &[&[&str]] = &[&["sha1", "other"], &["sha2", "other"]];
+        assert_eq!(search_top_k_precision(&expected, results, 5), 1.0);
+    }
+
+    #[test]
+    fn search_top_k_precision_no_hits() {
+        let expected = ["sha1"];
+        let results: &[&[&str]] = &[&["other", "different"]];
+        assert_eq!(search_top_k_precision(&expected, results, 5), 0.0);
+    }
+
+    #[test]
+    fn search_top_k_precision_respects_k_cutoff() {
+        let expected = ["sha1"];
+        // sha1 is at position 3 (0-indexed), but k=2 only looks at first 2.
+        let results: &[&[&str]] = &[&["a", "b", "sha1"]];
+        assert_eq!(search_top_k_precision(&expected, results, 2), 0.0);
+        assert_eq!(search_top_k_precision(&expected, results, 3), 1.0);
+    }
+
+    #[test]
+    fn search_top_k_precision_empty_returns_zero() {
+        let expected: &[&str] = &[];
+        let results: &[&[&str]] = &[];
+        assert_eq!(search_top_k_precision(expected, results, 5), 0.0);
+    }
+
+    #[test]
+    fn search_top_k_precision_partial() {
+        let expected = ["hit", "miss"];
+        let results: &[&[&str]] = &[&["hit"], &["different"]];
+        let p = search_top_k_precision(&expected, results, 5);
+        assert!((p - 0.5).abs() < 1e-6, "expected 0.5, got {p}");
+    }
+
+    // --- percentile ---
+
+    #[test]
+    fn percentile_p50_of_sorted_5_elements() {
+        let s = [10u128, 20, 30, 40, 50];
+        // nearest-rank: ceil(0.5 * 5) = 3 → index 2 → value 30
+        assert_eq!(percentile(&s, 50), 30);
+    }
+
+    #[test]
+    fn percentile_p100_is_max() {
+        let s = [1u128, 5, 3, 2, 4];
+        assert_eq!(percentile(&s, 100), 5);
+    }
+
+    #[test]
+    fn percentile_p0_is_min() {
+        let s = [7u128, 2, 9, 1, 5];
+        assert_eq!(percentile(&s, 0), 1);
+    }
+
+    #[test]
+    fn percentile_single_element() {
+        assert_eq!(percentile(&[42u128], 50), 42);
+        assert_eq!(percentile(&[42u128], 0), 42);
+        assert_eq!(percentile(&[42u128], 100), 42);
+    }
+
+    #[test]
+    fn percentile_p95_three_samples_equals_max() {
+        // n=3 cold runs: p95 = max (as stated in cold_index scenario docs).
+        let s = [100u128, 200, 300];
+        assert_eq!(percentile(&s, 95), 300);
+    }
+
+    #[test]
+    fn percentile_unsorted_input() {
+        let s = [50u128, 10, 30, 20, 40];
+        assert_eq!(percentile(&s, 50), 30);
     }
 }

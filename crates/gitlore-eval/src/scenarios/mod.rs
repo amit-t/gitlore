@@ -14,6 +14,7 @@
 
 mod builtin;
 pub mod perf;
+pub mod search;
 
 use std::collections::BTreeMap;
 
@@ -151,15 +152,20 @@ impl Default for Registry {
 
 /// Build the canonical registry seeded with every milestone-ready scenario.
 ///
-/// Today this is empty; concrete scenarios get plugged in by milestone:
-///   * M4 / TDD-001 — `search-mrr`, `search-top-k`.
-///   * M7 / TDD-002 — `story-jaccard`.
-///   * M8 / TDD-003 — `risk-mann-whitney`.
-///
-/// Returning an empty registry is intentional rather than `unimplemented!()`
-/// so the harness wiring can be exercised in CI before any scenario lands.
+/// M4 / TDD-001 — `search.synthetic`, `search.api-nodejs`, `perf.search_warm`.
+/// M7 / TDD-002 — `story-jaccard` (pending).
+/// M8 / TDD-003 — `risk-mann-whitney` (pending).
 pub fn default_registry() -> Registry {
-    Registry::new()
+    let mut r = Registry::new();
+    // M4 search scenarios.
+    r.register(Box::new(search::synthetic::SearchSynthetic));
+    r.register(Box::new(search::api_nodejs::SearchApiNodejs));
+    // M4 perf scenario.
+    r.register(Box::new(perf::search_warm::SearchWarm));
+    // Note: perf.cold_index_api_nodejs (M3-7e) lives in
+    // Registry::with_builtin_scenarios(), not here, because it was promoted
+    // from a stub before the default_registry pattern was introduced.
+    r
 }
 
 #[cfg(test)]
@@ -229,11 +235,22 @@ mod tests {
     }
 
     #[test]
-    fn default_registry_is_empty_until_milestones_ship() {
+    fn default_registry_has_m4_scenarios() {
         let r = default_registry();
+        // M4 scenarios are registered; registry is no longer empty.
+        assert!(!r.is_empty(), "default registry should have M4 scenarios");
+        let names: Vec<&str> = r.names().collect();
         assert!(
-            r.is_empty(),
-            "default registry stays empty until M4/M7/M8 scenarios land"
+            names.contains(&"search.synthetic"),
+            "search.synthetic missing"
+        );
+        assert!(
+            names.contains(&"search.api-nodejs"),
+            "search.api-nodejs missing"
+        );
+        assert!(
+            names.contains(&"perf.search_warm"),
+            "perf.search_warm missing"
         );
     }
 

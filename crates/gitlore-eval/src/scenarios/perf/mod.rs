@@ -13,3 +13,4 @@
 //! summary so the public lane never goes red on missing data.
 
 pub mod cold_index;
+pub mod search_warm;

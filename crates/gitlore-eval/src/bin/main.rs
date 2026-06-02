@@ -38,7 +38,7 @@ use std::process::ExitCode;
 use clap::{Parser, Subcommand};
 use serde_json::json;
 
-use gitlore_eval::scenarios::{Registry, ScenarioReport};
+use gitlore_eval::scenarios::{default_registry, Registry, ScenarioReport};
 
 /// Stable string the CLI prints when `--regression` is invoked at M2.
 ///
@@ -72,6 +72,16 @@ struct Cli {
     #[arg(long, value_name = "GIT_REF", requires = "regression")]
     baseline: Option<String>,
 
+    /// Run a single scenario by name (alternative to the `scenarios` subcommand).
+    /// Useful for CI steps: `gitlore-eval --scenario search.synthetic`.
+    #[arg(
+        long,
+        value_name = "SCENARIO_NAME",
+        conflicts_with = "regression",
+        conflicts_with = "list"
+    )]
+    scenario: Option<String>,
+
     /// Emit machine-readable JSON instead of human-readable text. Available
     /// on every mode (list / scenario run / regression walk / error).
     #[arg(long, global = true)]
@@ -93,7 +103,7 @@ enum Command {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-    let registry = Registry::with_builtin_scenarios();
+    let registry = default_registry();
 
     if cli.list {
         return print_list(&registry, cli.json);
@@ -110,6 +120,11 @@ fn main() -> ExitCode {
         return run_regression(&registry, baseline, cli.json);
     }
 
+    // `--scenario <NAME>` short-form (used by CI steps and smoke tests).
+    if let Some(name) = &cli.scenario {
+        return run_one(&registry, name, cli.json);
+    }
+
     match cli.command {
         Some(Command::Scenarios { name }) => run_one(&registry, &name, cli.json),
         None => {
@@ -118,7 +133,7 @@ fn main() -> ExitCode {
             // payload to encode — this is a usage problem.
             let _ = writeln!(
                 io::stderr().lock(),
-                "error: no command given. Try --help, --list, or `scenarios <NAME>`."
+                "error: no command given. Try --help, --list, --scenario <NAME>, or `scenarios <NAME>`."
             );
             ExitCode::from(2)
         }

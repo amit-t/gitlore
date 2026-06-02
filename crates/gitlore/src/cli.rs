@@ -42,12 +42,18 @@ use crossterm::{
 use gitlore_core::error::{Error, Result};
 use gitlore_core::index::classify_report::{ClassifyExplainReport, ClassifyGlobReport};
 use gitlore_core::index::identities_report::IdentitiesReport;
-use gitlore_core::index::indexer::{IndexReport, Indexer, RefPlan};
+use gitlore_core::index::indexer::{IndexReport, Indexer, RefPlan, INDEX_DB_FILENAME};
 use gitlore_core::index::lock::LockMode;
 use gitlore_core::index::status::StatusReport;
+use gitlore_core::search::clock::SystemClock;
+use gitlore_core::search::conn_pool::SearchConnPool;
+use gitlore_core::search::orchestrator::SearchOrchestrator;
+use gitlore_core::search::types::{Filters, Query, SearchMode};
 use ratatui::{backend::CrosstermBackend, Terminal};
 use serde_json::{json, Value};
 
+use crate::output::human;
+use crate::output::json as json_output;
 use crate::tui::{app, App};
 
 /// `gitlore` — local-first, narrative TUI for repo intelligence.
@@ -88,6 +94,8 @@ enum Command {
         /// Free-text query string.
         query: String,
         /// Cap the number of returned results.
+        /// Defaults to 50 when stdout is a TTY (without --json), or 1000 when
+        /// --json is set. Explicit values up to 10 000 are accepted.
         #[arg(long)]
         limit: Option<u32>,
         /// Restrict results to commits touching this path prefix.
@@ -99,6 +107,15 @@ enum Command {
         /// Upper bound for the commit window (ref/SHA/date).
         #[arg(long)]
         until: Option<String>,
+        /// Restrict to commits by this author (name or email substring match).
+        #[arg(long, value_name = "AUTHOR")]
+        author: Option<String>,
+        /// Restrict to commits reachable from this branch (short name or full ref).
+        #[arg(long, value_name = "BRANCH")]
+        branch: Option<String>,
+        /// Disable ANSI colour in the human-readable output.
+        #[arg(long)]
+        no_color: bool,
     },
 
     /// Group commits into narrative stories over a window.
@@ -285,19 +302,139 @@ pub async fn run() -> Result<()> {
     }
 }
 
-/// Run the configured subcommand. Subcommands wired at M3-7 (`index`,
-/// `status`) return real results; the rest still resolve to
-/// [`Error::Unimplemented`] with their stable wire name.
+/// Run the configured subcommand. Subcommands wired at M3-7/M4 return real
+/// results; the rest still resolve to [`Error::Unimplemented`].
 fn dispatch(cmd: &Command, json: bool) -> Result<()> {
     match cmd {
         Command::Index(args) => run_index(args, json),
         Command::Status => run_status(json),
         Command::Identities(args) => run_identities(args, json),
         Command::Classify(args) => run_classify(args, json),
+        Command::Search {
+            query,
+            limit,
+            path,
+            since,
+            until,
+            author,
+            branch,
+            no_color,
+        } => run_search(
+            query, *limit, path, since, until, author, branch, *no_color, json,
+        ),
         other => Err(Error::Unimplemented {
             subcommand: other.name(),
         }),
     }
+}
+
+/// Handle `gitlore search <query> [options]` (M4 / TDD-001).
+///
+/// Resolution order for `limit` (grill #15-16 / item 58):
+/// * Explicit `--limit N` (capped at 10 000).
+/// * 1000 when `--json` is set.
+/// * 50 when stdout is a TTY.
+/// * 50 as the final fallback.
+#[allow(clippy::too_many_arguments)]
+fn run_search(
+    query: &str,
+    limit_arg: Option<u32>,
+    path: &Option<String>,
+    since: &Option<String>,
+    until: &Option<String>,
+    author: &Option<String>,
+    branch: &Option<String>,
+    no_color: bool,
+    json: bool,
+) -> Result<()> {
+    let cwd = env::current_dir()?;
+
+    // Resolve the index path from the same helper the indexer uses.
+    let provider = gitlore_core::git::cli::GitCliProvider::new(cwd.clone());
+    let index_location = gitlore_core::index::storage::resolve_index_path(&cwd, &provider)?;
+    // index_location.path() is the directory; the DB file lives inside it.
+    let index_path = index_location.path().join(INDEX_DB_FILENAME);
+
+    // Resolve limit.
+    let soft_cap = 1000_u32;
+    let abs_cap = 10_000_u32;
+    let effective_limit = match limit_arg {
+        Some(n) => n.min(abs_cap),
+        None => {
+            if json {
+                soft_cap
+            } else {
+                50
+            }
+        }
+    };
+
+    let pool = SearchConnPool::open(&index_path)?;
+    let config = gitlore_core::SearchConfig::default();
+    let clock = Arc::new(SystemClock);
+    let orch = SearchOrchestrator::new(pool, config, clock);
+
+    let filters = Filters {
+        path: path.clone(),
+        since: since.clone(),
+        until: until.clone(),
+        author: author.clone(),
+        branch: branch.clone(),
+    };
+
+    let q = Query {
+        text: query.to_string(),
+        filters,
+        limit: effective_limit,
+    };
+
+    // SHA ambiguous prefix gets exit code 2 in non-JSON mode; main.rs
+    // translates Error::ShaAmbiguousPrefix → exit 2.
+    let results = orch.query(&q)?;
+
+    if json {
+        // Build the full JSON payload matching SPEC-001 §4.3.1.
+        let hits: Vec<Value> = results
+            .results
+            .iter()
+            .map(|h| {
+                json!({
+                    "sha": h.sha,
+                    "subject": h.subject,
+                    "author": h.author,
+                    "committed_at": h.committed_at,
+                    "score": h.score,
+                    "factors": {
+                        "lexical_bm25": h.factors.lexical_bm25,
+                        "path_relevance": h.factors.path_relevance,
+                        "recency": h.factors.recency,
+                    },
+                })
+            })
+            .collect();
+
+        let mode_str = match results.mode {
+            SearchMode::ShaLookup => "sha_lookup",
+            SearchMode::Hybrid => "hybrid",
+            SearchMode::Lexical => "lexical",
+        };
+
+        let data = json!({
+            "query": results.query,
+            "mode": mode_str,
+            "total_available": results.total_available,
+            "results": hits,
+        });
+
+        let envelope = json_output::envelope(data);
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let color = human::should_use_color(no_color);
+        human::render_search_hits(&results.results, color, results.total_available);
+    }
+
+    Ok(())
 }
 
 /// Handle `gitlore index [--dry-run|--rebuild] [--no-wait]`.

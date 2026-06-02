@@ -1,0 +1,55 @@
+# search-synthetic/queries.yml
+#
+# 10 hand-labeled query → expected_sha entries for the synthetic 50-commit
+# fixture built by tests/search_lexical_baseline.rs.
+#
+# The fixture is created deterministically in that test using well-known
+# subjects so these labels remain stable across runs.
+#
+# Schema:
+#   - query: <string>         # search query text
+#     expected_sha: <string>  # full 40-char SHA that should appear in top-5
+#     description: <string>   # why this is the expected result
+#
+# Acceptance criterion: top-5 precision >= 0.70 (7/10 queries hit).
+
+queries:
+  - query: "retry on timeout"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_01"
+    description: "commit subject contains 'retry on timeout'"
+
+  - query: "circuit breaker"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_02"
+    description: "commit subject contains 'circuit breaker'"
+
+  - query: "fix database connection"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_03"
+    description: "commit fixes database connection issue"
+
+  - query: "add unit tests"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_04"
+    description: "commit adds unit tests"
+
+  - query: "refactor authentication"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_05"
+    description: "commit refactors authentication module"
+
+  - query: "update dependencies"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_06"
+    description: "commit updates dependencies"
+
+  - query: "performance optimization cache"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_07"
+    description: "commit optimizes cache performance"
+
+  - query: "error handling middleware"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_08"
+    description: "commit adds error handling in middleware"
+
+  - query: "config loading environment"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_09"
+    description: "commit changes config loading from environment"
+
+  - query: "migration schema version"
+    expected_sha: "SYNTHETIC_SHA_PLACEHOLDER_10"
+    description: "commit adds or updates a schema migration"

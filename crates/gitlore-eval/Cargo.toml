@@ -36,6 +36,14 @@ serde_json = "1"
 # Self-cleaning on drop so we cannot leak state across the three samples.
 tempfile = "3"
 
+[dev-dependencies]
+# Criterion micro-benchmark harness for warm-search latency (M4 / item 67).
+criterion = { version = "0.5", features = ["html_reports"] }
+
+[[bench]]
+name = "search_warm"
+harness = false
+
 [lints]
 workspace = true
 

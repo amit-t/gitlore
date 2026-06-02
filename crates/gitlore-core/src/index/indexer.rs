@@ -206,6 +206,12 @@ impl Indexer {
             self.detect_reverts(&touched_shas)?;
         }
         self.prune_orphans()?;
+        // walk_and_persist already wrote into commits_fts; mark populated so
+        // backfill_fts_if_needed (below) skips the re-insert and avoids FTS5
+        // duplicates on a fresh index.
+        if commits_indexed > 0 {
+            self.set_fts5_populated(true)?;
+        }
         self.backfill_fts_if_needed()?;
         self.persist_watermark(&watermark)?;
         Ok(IndexReport {
@@ -231,6 +237,11 @@ impl Indexer {
             self.detect_reverts(&touched_shas)?;
         }
         self.prune_orphans()?;
+        // walk_and_persist already wrote into commits_fts for new commits;
+        // mark populated so backfill skips the re-insert and avoids duplicates.
+        if commits_indexed > 0 {
+            self.set_fts5_populated(true)?;
+        }
         self.backfill_fts_if_needed()?;
         self.persist_watermark(&watermark)?;
         Ok(IndexReport {

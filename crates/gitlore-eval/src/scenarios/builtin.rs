@@ -50,7 +50,7 @@ impl Scenario for StubScenario {
     }
 }
 
-/// Canonical M2 stub catalog.
+/// Canonical stub catalog.
 ///
 /// Order in this table is human-friendly (grouped by pillar); the registry
 /// itself reorders alphabetically so CI logs stay diff-friendly.
@@ -58,19 +58,21 @@ impl Scenario for StubScenario {
 /// Naming convention: `<pillar>.<fixture>[.<variant>]` where `<pillar>` is one
 /// of `search` / `story` / `risk` / `perf`. The dotted-name contract is
 /// asserted in `tests/registry_smoke.rs`.
+///
+/// Entries are removed from this table once a real implementation ships and
+/// is wired into `with_builtin_scenarios` as a concrete type.
+/// M4 completed: `search.synthetic`, `search.api-nodejs`, `perf.search_warm`
+/// removed from stubs (now real in `default_registry`).
 const BUILTINS: &[(&str, &str)] = &[
-    // Search pillar (M4 + M11 hybrid extension).
-    ("search.api-nodejs", "M4 via TDD-001"),
+    // Search pillar — M11 hybrid extension (still a stub).
     ("search.api-nodejs.hybrid", "M11 via TDD-005"),
     // Story pillar (M7).
     ("story.golden", "M7 via TDD-002"),
     // Risk pillar (M8).
     ("risk.spicy-boring", "M8 via TDD-003"),
-    // Perf budgets — one per pillar so each milestone owns its own budget walk.
-    // `perf.cold_index_api_nodejs` is no longer a stub: it ships as
-    // `super::perf::cold_index::ColdIndexApiNodejs` and is wired into the
-    // registry directly in `with_builtin_scenarios` below.
-    ("perf.search_warm", "M4 via TDD-004"),
+    // Perf budgets — remaining stubs (M7-M9).
+    // `perf.cold_index_api_nodejs` → real (ColdIndexApiNodejs).
+    // `perf.search_warm` → real (SearchWarm, shipped M4).
     ("perf.story_since", "M7 via TDD-004"),
     ("perf.risk_since", "M8 via TDD-004"),
     ("perf.hotspots_path", "M9 via TDD-004"),
@@ -105,7 +107,7 @@ mod tests {
         // BUILTINS holds only stubs; the real `perf.cold_index_api_nodejs`
         // scenario (M3-7e) is registered on top, so the catalog is one
         // entry larger than the stub table.
-        assert_eq!(r.len(), BUILTINS.len() + 1);
+        assert_eq!(r.len(), BUILTINS.len() + 1, "stubs + 1 real (cold_index)");
         for &(name, _) in BUILTINS {
             assert!(
                 r.get(name).is_some(),
@@ -115,6 +117,11 @@ mod tests {
         assert!(
             r.get("perf.cold_index_api_nodejs").is_some(),
             "real M3-7e perf scenario must be registered alongside the stub table"
+        );
+        // M4 real scenarios now live in default_registry(), not here.
+        assert!(
+            r.get("search.synthetic").is_none(),
+            "search.synthetic is in default_registry, not with_builtin_scenarios"
         );
     }
 
@@ -145,9 +152,18 @@ mod tests {
 
     #[test]
     fn does_not_perturb_default_registry() {
-        // `with_builtin_scenarios` is opt-in; the empty `default_registry`
-        // contract (used as a clean slate by future production scenarios)
-        // must keep behaving the same.
-        assert!(super::super::default_registry().is_empty());
+        // `with_builtin_scenarios` is opt-in; `default_registry` is the
+        // production catalog of real (non-stub) scenarios. At M4, it has
+        // the search + perf.search_warm real scenarios.
+        let dr = super::super::default_registry();
+        // M4 real scenarios are in default_registry; with_builtin_scenarios
+        // must NOT also contain them (no duplicate registration risk).
+        let wr = Registry::with_builtin_scenarios();
+        for name in dr.names() {
+            assert!(
+                wr.get(name).is_none(),
+                "name {name:?} is in default_registry AND with_builtin_scenarios — remove stub"
+            );
+        }
     }
 }

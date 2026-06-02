@@ -43,3 +43,4 @@ pub use config::{
     RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
 };
 pub use log::{init_logging, LogGuard, LogLevel};
+pub use search::{Factors, Filters, Query, SearchHit, SearchMode, SearchOrchestrator};
