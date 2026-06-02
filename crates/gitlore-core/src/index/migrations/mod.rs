@@ -274,12 +274,14 @@ mod tests {
         // Run migrations 0001 and 0002 only
         let tx = conn.transaction().unwrap();
         tx.execute_batch(include_str!("0001_init.sql")).unwrap();
-        tx.execute_batch(include_str!("0002_identity_is_bot.sql")).unwrap();
+        tx.execute_batch(include_str!("0002_identity_is_bot.sql"))
+            .unwrap();
         tx.commit().unwrap();
 
         // Apply migration 0003 on empty commits table
         let tx = conn.transaction().unwrap();
-        tx.execute_batch(include_str!("0003_fts5_backfill_marker.sql")).unwrap();
+        tx.execute_batch(include_str!("0003_fts5_backfill_marker.sql"))
+            .unwrap();
         tx.commit().unwrap();
 
         // Verify fts5_populated is 'true' when commits is empty
@@ -309,7 +311,8 @@ mod tests {
         // Run migrations 0001 and 0002 only
         let tx = conn.transaction().unwrap();
         tx.execute_batch(include_str!("0001_init.sql")).unwrap();
-        tx.execute_batch(include_str!("0002_identity_is_bot.sql")).unwrap();
+        tx.execute_batch(include_str!("0002_identity_is_bot.sql"))
+            .unwrap();
         tx.commit().unwrap();
 
         // Insert a commit before migration 0003
@@ -324,7 +327,8 @@ mod tests {
 
         // Apply migration 0003 with existing commits
         let tx = conn.transaction().unwrap();
-        tx.execute_batch(include_str!("0003_fts5_backfill_marker.sql")).unwrap();
+        tx.execute_batch(include_str!("0003_fts5_backfill_marker.sql"))
+            .unwrap();
         tx.commit().unwrap();
 
         // Verify fts5_populated is 'false' when commits exist
