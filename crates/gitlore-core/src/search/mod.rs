@@ -13,3 +13,7 @@
 pub mod lexical;
 pub mod path_relevance;
 pub mod recency;
+
+// Re-export commonly used types from submodules
+pub use lexical::{FilterClause, Fts5LexicalSearch, LexicalSearch, RawHit};
+pub use recency::{score, score_with_system_time};
