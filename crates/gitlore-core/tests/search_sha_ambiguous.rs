@@ -73,8 +73,7 @@ fn sha_lookup_unique_prefix_resolves_to_sha_lookup_mode() {
     assert_eq!(
         results.mode,
         SearchMode::ShaLookup,
-        "single-commit repo: expected ShaLookup mode for prefix {:?}",
-        prefix
+        "single-commit repo: expected ShaLookup mode for prefix {prefix:?}",
     );
     assert_eq!(
         results.results.len(),
@@ -98,11 +97,10 @@ fn sha_ambiguous_prefix_error_type_is_correct() {
     };
 
     // Stable wire code per SPEC-001 §4.3.
+    let code = err.code();
     assert_eq!(
-        err.code(),
-        "sha_ambiguous_prefix",
-        "stable error code drifted; got {:?}",
-        err.code()
+        code, "sha_ambiguous_prefix",
+        "stable error code drifted; got {code:?}",
     );
 
     // Display must mention the prefix.
@@ -113,8 +111,7 @@ fn sha_ambiguous_prefix_error_type_is_correct() {
     );
     assert!(
         rendered.contains("dead1234"),
-        "Display message should mention the prefix, got: {:?}",
-        rendered
+        "Display message should mention the prefix, got: {rendered:?}",
     );
 }
 

@@ -10,7 +10,7 @@
 use std::io;
 use std::path::Path;
 
-use gitlore_core::index::indexer::Indexer;
+use gitlore_core::index::indexer::{Indexer, INDEX_DB_FILENAME};
 use gitlore_core::index::lock::LockMode;
 use gitlore_core::search::clock::SystemClock;
 use gitlore_core::search::conn_pool::SearchConnPool;
@@ -125,7 +125,7 @@ fn run_api_nodejs(fixture_dir: &Path) -> io::Result<ScenarioReport> {
             .map_err(|e| io::Error::other(format!("run_initial: {e}")))?;
     }
 
-    let pool = SearchConnPool::open(index_location.path())
+    let pool = SearchConnPool::open(&index_location.path().join(INDEX_DB_FILENAME))
         .map_err(|e| io::Error::other(format!("pool open: {e}")))?;
     let config = SearchConfig::default();
     let clock = std::sync::Arc::new(SystemClock);

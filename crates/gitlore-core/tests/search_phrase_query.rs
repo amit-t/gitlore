@@ -82,20 +82,18 @@ fn phrase_query_circuit_breaker_returns_relevant_hit() {
     );
 
     // 2. Mode is Lexical (not a SHA-shaped query).
+    let mode = &results.mode;
     assert_eq!(
         results.mode,
         SearchMode::Lexical,
-        "expected SearchMode::Lexical, got {:?}",
-        results.mode
+        "expected SearchMode::Lexical, got {mode:?}",
     );
 
     // 3. The "circuit breaker" commit must appear in the results.
     let shas: Vec<&str> = results.results.iter().map(|h| h.sha.as_str()).collect();
     assert!(
         shas.contains(&breaker_sha.as_str()),
-        "commit {:?} (circuit breaker open on timeout) must appear in results; got {:?}",
-        breaker_sha,
-        shas
+        "commit {breaker_sha:?} (circuit breaker open on timeout) must appear in results; got {shas:?}",
     );
 
     // 4. All scores must be in (0.0, 1.0].

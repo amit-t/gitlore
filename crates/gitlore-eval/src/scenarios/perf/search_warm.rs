@@ -20,6 +20,7 @@ use std::io;
 use std::path::Path;
 use std::time::Instant;
 
+use gitlore_core::index::indexer::INDEX_DB_FILENAME;
 use gitlore_core::search::clock::SystemClock;
 use gitlore_core::search::conn_pool::SearchConnPool;
 use gitlore_core::search::orchestrator::SearchOrchestrator;
@@ -76,7 +77,7 @@ fn run_warm_search(fixture_dir: &Path) -> io::Result<ScenarioReport> {
     let index_location = gitlore_core::index::storage::resolve_index_path(fixture_dir, &provider)
         .map_err(|e| io::Error::other(format!("resolve_index_path: {e}")))?;
 
-    let pool = SearchConnPool::open(index_location.path())
+    let pool = SearchConnPool::open(&index_location.path().join(INDEX_DB_FILENAME))
         .map_err(|e| io::Error::other(format!("pool open: {e}")))?;
     let config = SearchConfig::default();
     let clock = std::sync::Arc::new(SystemClock);

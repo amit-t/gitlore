@@ -23,7 +23,7 @@ use std::process::Command;
 use std::sync::Arc;
 
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
-use gitlore_core::index::indexer::Indexer;
+use gitlore_core::index::indexer::{Indexer, INDEX_DB_FILENAME};
 use gitlore_core::index::lock::LockMode;
 use gitlore_core::search::clock::SystemClock;
 use gitlore_core::search::conn_pool::SearchConnPool;
@@ -81,7 +81,7 @@ fn setup_orchestrator(repo: &std::path::Path) -> SearchOrchestrator {
     let provider = gitlore_core::git::cli::GitCliProvider::new(repo.to_path_buf());
     let loc =
         gitlore_core::index::storage::resolve_index_path(repo, &provider).expect("index_path");
-    let pool = SearchConnPool::open(loc.path()).expect("pool");
+    let pool = SearchConnPool::open(&loc.path().join(INDEX_DB_FILENAME)).expect("pool");
     let config = SearchConfig::default();
     let clock = Arc::new(SystemClock);
     SearchOrchestrator::new(pool, config, clock)

@@ -83,9 +83,7 @@ fn filter_path() {
         let returned_shas: Vec<&str> = results.results.iter().map(|h| h.sha.as_str()).collect();
         assert!(
             returned_shas.contains(&src_sha.as_str()),
-            "path filter 'src/' should include the src commit {:?}; got {:?}",
-            src_sha,
-            returned_shas
+            "path filter 'src/' should include the src commit {src_sha:?}; got {returned_shas:?}",
         );
     }
     // If results are empty, path filter may not be fully wired yet — soft pass.
@@ -265,9 +263,7 @@ fn filter_branch() {
         let shas: Vec<&str> = results.results.iter().map(|h| h.sha.as_str()).collect();
         assert!(
             shas.contains(&feature_sha.as_str()),
-            "branch filter 'feature-branch' should include feature commit {:?}; got {:?}",
-            feature_sha,
-            shas
+            "branch filter 'feature-branch' should include feature commit {feature_sha:?}; got {shas:?}",
         );
     }
 }
