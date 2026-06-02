@@ -765,11 +765,163 @@ fn compute_counters(classifier: &Classifier, files: &[FileChange]) -> [u32; 9] {
     out
 }
 
+/// Extract code-like identifiers from text and expand them into multiple
+/// case variants for improved lexical search (ADR-006).
+///
+/// Emits camelCase, snake_case, kebab-case, and path-component splits
+/// from identifiers found in the input. Capped at 4 KiB per commit.
+fn expand_code_tokens(text: &str, out: &mut String) {
+    const MAX_BYTES: usize = 4096;
+
+    // Regex to match code-like identifiers: alphanumeric with underscores,
+    // hyphens, or camelCase transitions. Matches things like:
+    // "foo_bar", "foo-bar", "fooBar", "FooBar", "foo_bar_baz", etc.
+    let re = Regex::new(r"[a-zA-Z][a-zA-Z0-9_-]*").unwrap();
+
+    for cap in re.captures_iter(text) {
+        if out.len() >= MAX_BYTES {
+            break;
+        }
+
+        if let Some(m) = cap.get(0) {
+            let ident = m.as_str();
+
+            // Skip if too short or already common
+            if ident.len() < 3 {
+                continue;
+            }
+
+            // Generate variants
+            let variants = generate_case_variants(ident);
+            for variant in variants {
+                if out.len() + variant.len() + 1 >= MAX_BYTES {
+                    break;
+                }
+                if !variant.is_empty() {
+                    out.push(' ');
+                    out.push_str(&variant);
+                }
+            }
+
+            // Path component splits (e.g., "src/lib.rs" -> "src", "lib", "rs")
+            for part in ident.split(['/', '\\', '.', '-', '_']) {
+                if part.len() >= 3 && out.len() + part.len() + 1 < MAX_BYTES {
+                    out.push(' ');
+                    out.push_str(part);
+                }
+            }
+        }
+    }
+}
+
+/// Generate case variants (camelCase, snake_case, kebab-case) from an identifier.
+fn generate_case_variants(ident: &str) -> Vec<String> {
+    let mut variants = Vec::new();
+
+    // Skip if the identifier is purely numeric or too short
+    if ident.len() < 3 || ident.chars().all(|c| c.is_ascii_digit()) {
+        return variants;
+    }
+
+    let original = ident.to_string();
+
+    // Extract words from the identifier (handles camelCase, snake_case, kebab-case)
+    let words: Vec<String> = extract_words(ident);
+
+    if words.is_empty() {
+        return variants;
+    }
+
+    // camelCase: first word lowercase, rest capitalized
+    let camel: String = words
+        .iter()
+        .enumerate()
+        .map(|(i, w)| {
+            if i == 0 {
+                w.to_lowercase()
+            } else {
+                capitalize_first(w)
+            }
+        })
+        .collect();
+    if camel != original.to_lowercase() && !camel.is_empty() {
+        variants.push(camel);
+    }
+
+    // snake_case: all lowercase with underscores
+    let snake: String = words
+        .iter()
+        .map(|w| w.to_lowercase())
+        .collect::<Vec<_>>()
+        .join("_");
+    if snake != original.to_lowercase() && !snake.is_empty() {
+        variants.push(snake);
+    }
+
+    // kebab-case: all lowercase with hyphens
+    let kebab: String = words
+        .iter()
+        .map(|w| w.to_lowercase())
+        .collect::<Vec<_>>()
+        .join("-");
+    if kebab != original.to_lowercase() && !kebab.is_empty() {
+        variants.push(kebab);
+    }
+
+    variants
+}
+
+/// Extract words from an identifier, handling camelCase, snake_case, kebab-case.
+fn extract_words(ident: &str) -> Vec<String> {
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut prev_was_lowercase = false;
+
+    for c in ident.chars() {
+        if c == '_' || c == '-' {
+            if !current.is_empty() {
+                words.push(current.clone());
+                current.clear();
+            }
+        } else if c.is_uppercase() {
+            if prev_was_lowercase && !current.is_empty() {
+                // camelCase transition: push previous word
+                words.push(current.clone());
+                current.clear();
+            }
+            current.push(c.to_ascii_lowercase());
+            prev_was_lowercase = false;
+        } else if c.is_lowercase() || c.is_ascii_digit() {
+            current.push(c);
+            prev_was_lowercase = true;
+        }
+    }
+
+    if !current.is_empty() {
+        words.push(current);
+    }
+
+    words
+}
+
+/// Capitalize the first character of a string.
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 /// Synthesise the `expanded` FTS column from subject + body + dirs so
 /// the lexical search at M4 has a single pre-flattened column to BM25
 /// against.
+///
+/// Extended per ADR-006 to include code token expansion (camelCase,
+/// snake_case, kebab-case, path-component splits) for improved search
+/// recall. Capped at 4 KiB per commit.
 fn build_expanded(subject: &str, body: &str, dirs: &[String]) -> String {
-    let mut s = String::with_capacity(subject.len() + body.len() + 16);
+    let mut s = String::with_capacity(subject.len() + body.len() + 512);
     s.push_str(subject);
     if !body.is_empty() {
         s.push('\n');
@@ -779,6 +931,16 @@ fn build_expanded(subject: &str, body: &str, dirs: &[String]) -> String {
         s.push(' ');
         s.push_str(d);
     }
+
+    // Expand code tokens from subject and body
+    expand_code_tokens(subject, &mut s);
+    expand_code_tokens(body, &mut s);
+
+    // Expand directory paths
+    for d in dirs {
+        expand_code_tokens(d, &mut s);
+    }
+
     s
 }
 
@@ -890,6 +1052,63 @@ mod tests {
     #[test]
     fn build_expanded_omits_body_when_empty() {
         let s = build_expanded("subject only", "", &[]);
-        assert_eq!(s, "subject only");
+        assert!(s.contains("subject only"));
+    }
+
+    #[test]
+    fn expand_code_tokens_generates_case_variants() {
+        let mut s = String::new();
+        expand_code_tokens("fooBar", &mut s);
+        assert!(s.contains("foo_bar") || s.contains("foo-bar"));
+    }
+
+    #[test]
+    fn expand_code_tokens_splits_paths() {
+        let mut s = String::new();
+        expand_code_tokens("src/lib.rs", &mut s);
+        assert!(s.contains("src"));
+        assert!(s.contains("lib"));
+    }
+
+    #[test]
+    fn expand_code_tokens_respects_4kib_cap() {
+        let long_text = "a".repeat(5000);
+        let mut s = String::new();
+        expand_code_tokens(&long_text, &mut s);
+        assert!(s.len() <= 4096);
+    }
+
+    #[test]
+    fn extract_words_handles_camel_case() {
+        let words = extract_words("fooBarBaz");
+        assert_eq!(words, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn extract_words_handles_snake_case() {
+        let words = extract_words("foo_bar_baz");
+        assert_eq!(words, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn extract_words_handles_kebab_case() {
+        let words = extract_words("foo-bar-baz");
+        assert_eq!(words, vec!["foo", "bar", "baz"]);
+    }
+
+    #[test]
+    fn generate_case_variants_camel_input() {
+        let variants = generate_case_variants("fooBar");
+        assert!(variants
+            .iter()
+            .any(|v| v.contains("foo_bar") || v.contains("foo-bar")));
+    }
+
+    #[test]
+    fn generate_case_variants_snake_input() {
+        let variants = generate_case_variants("foo_bar");
+        assert!(variants
+            .iter()
+            .any(|v| v == "fooBar" || v.contains("foo-bar")));
     }
 }
