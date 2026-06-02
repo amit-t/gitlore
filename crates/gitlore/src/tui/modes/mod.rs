@@ -4,11 +4,11 @@
 //! - Four modes: Search, Story, Risk, Hotspots.
 //! - `Tab` / `Shift-Tab` cycle modes (AC-TUI-1).
 //! - `q` quits.
-//! - Arrow keys are reserved for per-mode navigation; no-op until M5.
+//! - Arrow keys handled by per-mode state machines in M5+.
 //!
-//! Per-mode submodules (search, story, risk, hotspots) will be added as each
-//! milestone lands. At scaffold time only the dispatcher and the [`Mode`]
-//! enum live here.
+//! M5 adds the `search` submodule with the full search-mode state machine.
+
+pub mod search;
 
 use crossterm::event::{KeyCode, KeyEvent};
 

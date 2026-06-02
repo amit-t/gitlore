@@ -45,6 +45,11 @@ serde_json = "1"
 globset = "0.4"
 # Workspace tier dep — gitlore depends only on gitlore-core (ADR-005).
 gitlore-core = { path = "../gitlore-core" }
+# Detects terminal background (light/dark) for Theme::Auto resolution (ADR-014).
+termbg = "0.6"
+# Converts ANSI-escape-coloured bytes from `git show --color=always` into
+# ratatui Spans so the diff pane can render styled output (ADR-013).
+ansi-to-tui = "7"
 
 [dev-dependencies]
 # Required by `tests/tui_launch_smoke.rs`. See its module docs for the

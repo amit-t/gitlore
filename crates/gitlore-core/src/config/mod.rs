@@ -306,6 +306,11 @@ pub struct TuiConfig {
     pub color_blind_safe: bool,
     /// Capture mouse events. Default: `false` (keyboard-first per §11.9).
     pub mouse: bool,
+    /// Per-action key remaps. An empty table means "use built-in defaults"
+    /// (ADR-015). Only the listed actions may be remapped; unknown keys are
+    /// rejected with `ConfigInvalidKey`.
+    #[serde(default)]
+    pub keys: KeysConfig,
 }
 
 impl Default for TuiConfig {
@@ -314,8 +319,28 @@ impl Default for TuiConfig {
             theme: Theme::Auto,
             color_blind_safe: false,
             mouse: false,
+            keys: KeysConfig::default(),
         }
     }
+}
+
+/// Per-action key-binding overrides for the TUI (ADR-015).
+///
+/// Each field is an `Option<char>`. `None` means "use the built-in default".
+/// Setting a value to the same char as another action is detected at startup
+/// and reported as a `ConfigInvalidKey` error.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+pub struct KeysConfig {
+    /// Key that triggers the help overlay. Default: `?`.
+    pub help: Option<char>,
+    /// Key that focuses the search input bar. Default: `/`.
+    pub focus_search: Option<char>,
+    /// Key that submits the search query. Default: Enter (not remappable via
+    /// this field; included here for documentation completeness).
+    pub submit: Option<char>,
+    /// Key that clears the current search query. Default: `Escape`.
+    pub clear: Option<char>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

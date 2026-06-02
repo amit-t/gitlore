@@ -40,6 +40,7 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use gitlore_core::error::{Error, Result};
+use gitlore_core::git::GitProvider as _;
 use gitlore_core::index::classify_report::{ClassifyExplainReport, ClassifyGlobReport};
 use gitlore_core::index::identities_report::IdentitiesReport;
 use gitlore_core::index::indexer::{IndexReport, Indexer, RefPlan, INDEX_DB_FILENAME};
@@ -54,7 +55,7 @@ use serde_json::{json, Value};
 
 use crate::output::human;
 use crate::output::json as json_output;
-use crate::tui::{app, App};
+use crate::tui::app;
 
 /// `gitlore` — local-first, narrative TUI for repo intelligence.
 ///
@@ -887,9 +888,22 @@ fn emit_error(err: &Error, json: bool) {
 }
 
 /// Launch the ratatui TUI inside the [`TerminalGuard`] RAII wrapper.
+///
+/// Loads config from the per-repo and user-global config files so the TUI
+/// honours `[tui] theme`, `color_blind_safe`, and `[tui.keys]` overrides.
 async fn run_tui() -> Result<()> {
+    let cwd = env::current_dir()?;
+    // Best-effort config load: fall back to defaults on any error.
+    let provider = gitlore_core::git::cli::GitCliProvider::new(cwd.clone());
+    let tui_config = match provider.common_dir() {
+        Ok(common_dir) => gitlore_core::config::Config::load(&common_dir)
+            .map(|c| c.tui)
+            .unwrap_or_default(),
+        Err(_) => gitlore_core::config::TuiConfig::default(),
+    };
+
     let mut guard = TerminalGuard::install()?;
-    let mut state = App::default();
+    let mut state = crate::tui::app::App::new(&tui_config, cwd);
     let result = app::run(&mut guard.terminal, &mut state);
     guard.restore()?;
     Ok(result?)
