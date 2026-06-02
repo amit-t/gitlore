@@ -205,6 +205,20 @@ pub enum Error {
         /// Name of the subcommand that was invoked (e.g. `"search"`).
         subcommand: String,
     },
+
+    /// A search query is invalid (malformed syntax, unsupported operator, etc.).
+    #[error("invalid query: {query}")]
+    InvalidQuery {
+        /// Offending query string.
+        query: String,
+    },
+
+    /// The index is not ready for the requested operation.
+    ///
+    /// This can happen when a query is issued before indexing completes,
+    /// or when the index is in an incomplete state due to interruption.
+    #[error("index is not ready; run `gitlore index` first")]
+    IndexNotReady,
 }
 
 impl Error {
@@ -238,6 +252,8 @@ impl Error {
             Error::Sqlite(_) => "sqlite",
             Error::Git { .. } => "git",
             Error::Unimplemented { .. } => "unimplemented",
+            Error::InvalidQuery { .. } => "invalid_query",
+            Error::IndexNotReady => "index_not_ready",
         }
     }
 }
@@ -367,6 +383,13 @@ mod tests {
                 },
                 "unimplemented",
             ),
+            (
+                Error::InvalidQuery {
+                    query: "invalid syntax:".to_string(),
+                },
+                "invalid_query",
+            ),
+            (Error::IndexNotReady, "index_not_ready"),
         ]
     }
 
@@ -399,14 +422,16 @@ mod tests {
                 | Error::Io(_)
                 | Error::Sqlite(_)
                 | Error::Git { .. }
-                | Error::Unimplemented { .. } => e.code(),
+                | Error::Unimplemented { .. }
+                | Error::InvalidQuery { .. }
+                | Error::IndexNotReady => e.code(),
             }
         }
         for (variant, _) in &fixture {
             assert_eq!(discriminant_code(variant), variant.code());
         }
 
-        // Defensive double-check: fixture must enumerate at least the 16
+        // Defensive double-check: fixture must enumerate at least the 18
         // SPEC-001 §4.3 codes spelled out in the task description.
         for expected in [
             "not_a_repo",
@@ -426,6 +451,8 @@ mod tests {
             "sqlite",
             "git",
             "unimplemented",
+            "invalid_query",
+            "index_not_ready",
         ] {
             assert!(
                 fixture_codes.contains(expected),
