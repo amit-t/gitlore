@@ -77,10 +77,7 @@ pub fn score(commit_dirs: &[&str], filter_path: Option<&str>) -> f32 {
 
             // Check for sibling top-level directory:
             // Both are top-level (single component) but different names
-            if !dir_top.is_empty()
-                && dir_components.len() == 1
-                && dir_top != filter_top
-            {
+            if !dir_top.is_empty() && dir_components.len() == 1 && dir_top != filter_top {
                 return 0.5;
             }
         }
