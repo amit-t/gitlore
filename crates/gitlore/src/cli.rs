@@ -1,8 +1,8 @@
 //! gitlore CLI surface (SPEC-001 §4.1).
 //!
-//! Full clap-derive subcommand catalog. At M1 the only branch with a real
-//! implementation is the default no-arg invocation, which boots the TUI via
-//! [`TerminalGuard`] (AC-INIT-1, AC-TUI-1). Every explicit subcommand is
+//! Full clap-derive subcommand catalog. M3-7 wires real handlers for
+//! `gitlore index` (the indexer engine landed at M3-6) and
+//! `gitlore status` (read-only index header). Every other subcommand is
 //! parseable so `gitlore --help` reflects the eventual surface, but the
 //! handler bodies return [`gitlore_core::Error::Unimplemented`] with the
 //! stable wire code `"unimplemented"` (SPEC-001 §4.3).
@@ -18,12 +18,20 @@
 //!   single line. Stdout (not stderr) is the envelope target so scripted
 //!   callers can pipe it straight into `jq` even when stderr is muted.
 //!
+//! Successful subcommands respect the same split: the human form prints
+//! to stdout in plain text; `--json` prints exactly one JSON line to
+//! stdout.
+//!
 //! `main` keeps ownership of process concerns (tokio runtime, top-level span
 //! carrying the UUIDv7 `correlation_id`, exit-code translation). Terminal
 //! lifecycle (raw mode, alternate screen) is owned here so panics inside the
 //! TUI event loop still restore the host terminal via the RAII guard.
 
-use std::io::{self, Write};
+use std::env;
+use std::io::{self, IsTerminal, Write};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
 use crossterm::{
@@ -32,15 +40,18 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use gitlore_core::error::{Error, Result};
+use gitlore_core::index::indexer::{IndexReport, Indexer, RefPlan};
+use gitlore_core::index::lock::LockMode;
+use gitlore_core::index::status::StatusReport;
 use ratatui::{backend::CrosstermBackend, Terminal};
-use serde_json::json;
+use serde_json::{json, Value};
 
 use crate::tui::{app, App};
 
 /// `gitlore` — local-first, narrative TUI for repo intelligence.
 ///
 /// Default (no subcommand) launches the TUI inside the current Git repo.
-/// Explicit subcommands are plumbed per SPEC-001 §4.1; non-M1 surfaces
+/// Explicit subcommands are plumbed per SPEC-001 §4.1; non-M3-7 surfaces
 /// return the stable `"unimplemented"` error.
 #[derive(Debug, Parser)]
 #[command(
@@ -68,7 +79,7 @@ struct Cli {
 #[derive(Debug, Subcommand)]
 enum Command {
     /// Index (or update) the repo's history into the local SQLite store.
-    Index,
+    Index(IndexArgs),
 
     /// Search the index lexically (and, once embeddings are set up, semantically).
     Search {
@@ -162,6 +173,24 @@ enum Command {
     Status,
 }
 
+/// `gitlore index` arguments (SPEC-001 §4.1).
+#[derive(Debug, clap::Args)]
+struct IndexArgs {
+    /// Enumerate refs and estimate the commit count without touching
+    /// the database. Mutually exclusive with `--rebuild`.
+    #[arg(long, conflicts_with = "rebuild")]
+    dry_run: bool,
+
+    /// Drop the existing database and re-walk from scratch.
+    #[arg(long)]
+    rebuild: bool,
+
+    /// Fail fast with `lock_contention` instead of waiting on a
+    /// concurrent writer. Defaults to waiting (kernel-level blocking).
+    #[arg(long)]
+    no_wait: bool,
+}
+
 /// `gitlore config` sub-actions.
 #[derive(Debug, Subcommand)]
 enum ConfigAction {
@@ -187,7 +216,7 @@ impl Command {
     /// this string.
     fn name(&self) -> String {
         match self {
-            Command::Index => "index".into(),
+            Command::Index(_) => "index".into(),
             Command::Search { .. } => "search".into(),
             Command::Story { .. } => "story".into(),
             Command::Risk { .. } => "risk".into(),
@@ -219,7 +248,7 @@ pub async fn run() -> Result<()> {
     match cli.command {
         None => run_tui().await,
         Some(cmd) => {
-            let outcome = dispatch(&cmd);
+            let outcome = dispatch(&cmd, cli.json);
             if let Err(ref err) = outcome {
                 emit_error(err, cli.json);
             }
@@ -228,12 +257,257 @@ pub async fn run() -> Result<()> {
     }
 }
 
-/// Run the configured subcommand. At M1 every arm returns
-/// [`Error::Unimplemented`]; future milestones replace these with real work.
-fn dispatch(cmd: &Command) -> Result<()> {
-    Err(Error::Unimplemented {
-        subcommand: cmd.name(),
-    })
+/// Run the configured subcommand. Subcommands wired at M3-7 (`index`,
+/// `status`) return real results; the rest still resolve to
+/// [`Error::Unimplemented`] with their stable wire name.
+fn dispatch(cmd: &Command, json: bool) -> Result<()> {
+    match cmd {
+        Command::Index(args) => run_index(args, json),
+        Command::Status => run_status(json),
+        other => Err(Error::Unimplemented {
+            subcommand: other.name(),
+        }),
+    }
+}
+
+/// Handle `gitlore index [--dry-run|--rebuild] [--no-wait]`.
+fn run_index(args: &IndexArgs, json: bool) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let lock_mode = if args.no_wait {
+        LockMode::NoWait
+    } else {
+        LockMode::Wait
+    };
+    let mut indexer = Indexer::open(&cwd, lock_mode)?;
+
+    if args.dry_run {
+        let plan = indexer.dry_run()?;
+        emit_dry_run(&plan, json);
+        return Ok(());
+    }
+
+    let progress = ProgressPrinter::new(json);
+    let report = if args.rebuild {
+        let mut cb = progress.callback();
+        indexer.rebuild(&mut cb)?
+    } else if indexer.has_watermark()? {
+        let mut cb = progress.callback();
+        indexer.run_incremental(&mut cb)?
+    } else {
+        let mut cb = progress.callback();
+        indexer.run_initial(&mut cb)?
+    };
+    progress.finish();
+    emit_index_report(&report, json);
+    Ok(())
+}
+
+/// Handle `gitlore status` — open the index read-only and render the
+/// header (commit count, schema version, embeddings state, writer-lock
+/// holder).
+fn run_status(json: bool) -> Result<()> {
+    let cwd = env::current_dir()?;
+    let provider = gitlore_core::git::cli::GitCliProvider::new(cwd.clone());
+    let report = StatusReport::read(&cwd, &provider)?;
+    emit_status(&report, json);
+    Ok(())
+}
+
+/// One-line-per-second stderr progress printer for the indexer walk.
+///
+/// Suppresses output entirely when `--json` is in effect so the JSON
+/// envelope on stdout stays the only machine-parseable surface. Also
+/// suppresses when stderr is not a TTY *and* the env var
+/// `GITLORE_PROGRESS=always` is not set, so unit tests and piped runs
+/// don't get noisy stderr.
+struct ProgressPrinter {
+    indexed: Arc<AtomicU64>,
+    total: Arc<AtomicU64>,
+    finished: Arc<AtomicBool>,
+    handle: Option<std::thread::JoinHandle<()>>,
+}
+
+impl ProgressPrinter {
+    fn new(json: bool) -> Self {
+        let suppressed = json
+            || (!io::stderr().is_terminal()
+                && env::var_os("GITLORE_PROGRESS")
+                    .map(|v| v != "always")
+                    .unwrap_or(true));
+        let indexed = Arc::new(AtomicU64::new(0));
+        let total = Arc::new(AtomicU64::new(0));
+        let finished = Arc::new(AtomicBool::new(false));
+        let handle = if suppressed {
+            None
+        } else {
+            let indexed_c = indexed.clone();
+            let total_c = total.clone();
+            let finished_c = finished.clone();
+            Some(std::thread::spawn(move || {
+                let start = Instant::now();
+                while !finished_c.load(Ordering::Relaxed) {
+                    std::thread::sleep(Duration::from_secs(1));
+                    if finished_c.load(Ordering::Relaxed) {
+                        break;
+                    }
+                    let n = indexed_c.load(Ordering::Relaxed);
+                    let m = total_c.load(Ordering::Relaxed);
+                    let elapsed = start.elapsed().as_secs();
+                    let eta = if n > 0 && m > n {
+                        ((m - n) as f64) * (elapsed as f64) / (n as f64)
+                    } else {
+                        0.0
+                    };
+                    let mut err = io::stderr().lock();
+                    let _ = writeln!(
+                        err,
+                        "indexed {n}/{m} ({elapsed} s elapsed, {eta:.0} s ETA)"
+                    );
+                }
+            }))
+        };
+        Self {
+            indexed,
+            total,
+            finished,
+            handle,
+        }
+    }
+
+    fn callback(&self) -> impl FnMut(u64, u64) + '_ {
+        let indexed = self.indexed.clone();
+        let total = self.total.clone();
+        move |n, m| {
+            indexed.store(n, Ordering::Relaxed);
+            total.store(m, Ordering::Relaxed);
+        }
+    }
+
+    fn finish(self) {
+        self.finished.store(true, Ordering::Relaxed);
+        if let Some(h) = self.handle {
+            let _ = h.join();
+        }
+    }
+}
+
+fn emit_index_report(report: &IndexReport, json: bool) {
+    let watermark: serde_json::Map<String, Value> = report
+        .watermark
+        .iter()
+        .map(|(k, v)| (k.clone(), Value::String(v.as_str().to_string())))
+        .collect();
+    if json {
+        let envelope = json!({
+            "commits_indexed": report.commits_indexed,
+            "commits_total": report.commits_total,
+            "ref_count": report.ref_count,
+            "duration_ms": report.duration_ms,
+            "watermark": watermark,
+        });
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(
+            stdout,
+            "indexed {} of {} commit(s) across {} ref(s) in {} ms",
+            report.commits_indexed, report.commits_total, report.ref_count, report.duration_ms,
+        );
+    }
+}
+
+fn emit_dry_run(plan: &RefPlan, json: bool) {
+    if json {
+        let refs: Vec<Value> = plan
+            .refs
+            .iter()
+            .map(|r| {
+                json!({
+                    "name": r.name,
+                    "sha": r.sha.as_str(),
+                    "kind": match r.ref_type {
+                        gitlore_core::git::RefType::Branch => "branch",
+                        gitlore_core::git::RefType::RemoteBranch => "remote_branch",
+                        gitlore_core::git::RefType::Tag => "tag",
+                    },
+                })
+            })
+            .collect();
+        let envelope = json!({
+            "commits_indexed": 0,
+            "commits_total": plan.estimated_commits,
+            "ref_count": plan.refs.len(),
+            "duration_ms": 0,
+            "watermark": {},
+            "refs": refs,
+            "dry_run": true,
+        });
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(
+            stdout,
+            "dry-run: {} ref(s), ~{} unique commit(s) reachable",
+            plan.refs.len(),
+            plan.estimated_commits,
+        );
+        for r in &plan.refs {
+            let _ = writeln!(stdout, "  {} {}", r.sha.as_str(), r.name);
+        }
+    }
+}
+
+fn emit_status(report: &StatusReport, json: bool) {
+    if json {
+        let writer_lock = match &report.writer_lock {
+            Some(w) => json!({"pid": w.pid, "started_at": w.started_at}),
+            None => Value::Null,
+        };
+        let envelope = json!({
+            "commit_count": report.commit_count,
+            "db_path": report.db_path,
+            "db_size_bytes": report.db_size_bytes,
+            "schema_version": report.schema_version,
+            "embeddings_enabled": report.embeddings_enabled,
+            "model": report.model,
+            "writer_lock": writer_lock,
+        });
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "{envelope}");
+    } else {
+        let mut stdout = io::stdout().lock();
+        let _ = writeln!(stdout, "index: {}", report.db_path.display());
+        let _ = writeln!(stdout, "schema_version: {}", report.schema_version);
+        let _ = writeln!(stdout, "commits: {}", report.commit_count);
+        let _ = writeln!(stdout, "db_size_bytes: {}", report.db_size_bytes);
+        let _ = writeln!(
+            stdout,
+            "embeddings: {}{}",
+            if report.embeddings_enabled {
+                "enabled"
+            } else {
+                "disabled"
+            },
+            match &report.model {
+                Some(m) => format!(" (model: {m})"),
+                None => String::new(),
+            }
+        );
+        match &report.writer_lock {
+            Some(w) => {
+                let _ = writeln!(
+                    stdout,
+                    "writer_lock: pid={} since={}",
+                    w.pid, w.started_at
+                );
+            }
+            None => {
+                let _ = writeln!(stdout, "writer_lock: (none)");
+            }
+        }
+    }
 }
 
 /// Render an [`Error`] for the user.
@@ -306,3 +580,4 @@ impl Drop for TerminalGuard {
         let _ = self.restore();
     }
 }
+

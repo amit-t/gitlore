@@ -1178,6 +1178,7 @@ dependencies = [
  "assert_cmd",
  "clap",
  "crossterm",
+ "fs2",
  "gitlore-core",
  "portable-pty",
  "ratatui",

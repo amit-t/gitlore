@@ -358,6 +358,16 @@ impl Indexer {
         &self.conn
     }
 
+    /// `true` when the per-ref watermark row exists in `index_state` —
+    /// i.e. a previous indexer run has persisted state and an
+    /// incremental walk can resume from it. `false` on a fresh
+    /// database, which is the M3-7 CLI's cue to dispatch
+    /// [`Indexer::run_initial`] instead.
+    pub fn has_watermark(&self) -> Result<bool> {
+        let map = self.load_watermark()?;
+        Ok(!map.is_empty())
+    }
+
     // ---------------------------------------------------------------------
     // Internal: walk + persist pipeline
     // ---------------------------------------------------------------------
