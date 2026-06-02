@@ -21,6 +21,10 @@ name = "gitlore-eval"
 path = "src/bin/main.rs"
 
 [dependencies]
+# Workspace-internal indexer + lock primitives consumed by the M3-7e
+# perf gate (`perf.cold_index_api_nodejs`). ADR-005 permits gitlore-eval
+# to depend on gitlore-core; it is the only intra-workspace dep allowed.
+gitlore-core = { path = "../gitlore-core" }
 # CLI surface — clap v4 derive. Picked to match `gitlore` so the
 # `gitlore-eval` --help output reads the same way and so we share the
 # already-locked clap version in the workspace `Cargo.lock`.
@@ -28,6 +32,9 @@ clap = { version = "4", features = ["derive"] }
 # Renders the `--json` envelope (scenario report + regression walk +
 # unknown-scenario error). Same major already locked in the workspace.
 serde_json = "1"
+# Fresh tempdirs for each cold-index iteration of the M3-7e perf gate.
+# Self-cleaning on drop so we cannot leak state across the three samples.
+tempfile = "3"
 
 [lints]
 workspace = true
