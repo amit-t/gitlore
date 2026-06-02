@@ -147,7 +147,7 @@ mod tests {
             for elapsed_days in [0, 1, 10, 100, 1000, 10000] {
                 let elapsed_seconds = elapsed_days * 86_400;
                 let result = score(0, elapsed_seconds, half_life_days);
-                assert!(result >= 0.0 && result <= 1.0);
+                assert!((0.0..=1.0).contains(&result));
             }
         }
     }

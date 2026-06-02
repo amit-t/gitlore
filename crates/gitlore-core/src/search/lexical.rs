@@ -116,7 +116,7 @@ impl<'a> Fts5LexicalSearch<'a> {
             // This is a phrase query - remove outer quotes and double internal quotes
             let inner = &trimmed[1..trimmed.len() - 1];
             let doubled = inner.replace('"', "\"\"");
-            escaped = format!("\"{}\"", doubled);
+            escaped = format!("\"{doubled}\"");
         } else {
             // Not a phrase query - just double any quotes
             escaped = escaped.replace('"', "\"\"");
@@ -181,7 +181,7 @@ impl<'a> Fts5LexicalSearch<'a> {
 
         if let Some(ref risk_label) = filter.risk_label {
             where_clauses.push("c.risk_label = ?".to_string());
-            params.push(format!("'{}'", risk_label));
+            params.push(format!("'{risk_label}'"));
         }
 
         if let Some(min_time) = filter.min_authored_at {
@@ -198,14 +198,13 @@ impl<'a> Fts5LexicalSearch<'a> {
 
         format!(
             r#"
-            SELECT c.sha, bm25(commits_fts) * ({}) as score
+            SELECT c.sha, bm25(commits_fts) * ({bm25_expr}) as score
             FROM commits_fts
             JOIN commits c ON commits_fts.sha = c.sha
             WHERE commits_fts MATCH ? AND {where_clause}
             ORDER BY score DESC
             LIMIT ?
-            "#,
-            bm25_expr
+            "#
         )
     }
 }
