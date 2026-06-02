@@ -60,4 +60,5 @@ pub mod lock;
 pub mod migrations;
 pub mod reclassify;
 pub mod schema;
+pub mod status;
 pub mod storage;

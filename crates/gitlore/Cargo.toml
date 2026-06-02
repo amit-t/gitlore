@@ -55,6 +55,10 @@ tempfile = "3"
 portable-pty = "0.8"
 sha2 = "0.10"
 walkdir = "2"
+# tests/cli_index_status.rs: parses the --json envelopes the M3-7 CLI
+# emits and takes an advisory lock to simulate writer contention.
+serde_json = "1"
+fs2 = "0.4"
 
 [lints]
 workspace = true
