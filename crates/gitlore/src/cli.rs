@@ -88,8 +88,18 @@ enum Command {
         /// Free-text query string.
         query: String,
         /// Cap the number of returned results.
+        ///
+        /// Default resolution: 50 when stdout is a TTY and --json unset,
+        /// 1000 when --json set. Both defaults are capped at SearchConfig.soft_cap.
+        /// Explicit --limit allowed up to 10000.
         #[arg(long)]
         limit: Option<u32>,
+        /// Restrict results to commits by this author (name or email pattern).
+        #[arg(long)]
+        author: Option<String>,
+        /// Restrict results to commits on this branch (ref name or pattern).
+        #[arg(long)]
+        branch: Option<String>,
         /// Restrict results to commits touching this path prefix.
         #[arg(long)]
         path: Option<String>,
