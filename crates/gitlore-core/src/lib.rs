@@ -26,6 +26,8 @@
 //!   ([`index::schema`]), versioned migration runner
 //!   ([`index::migrations`]), and the index-path resolver
 //!   ([`index::storage`]). M3-2 foundation for the indexer.
+//! * [`search`] — TDD-001 §2.1 search connection pool with read-only
+//!   SQLite access for concurrent search operations.
 
 #![forbid(unsafe_code)]
 #![deny(missing_docs)]
