@@ -32,7 +32,7 @@ use crate::error::{Error, Result};
 
 /// Highest schema version this binary understands. Bump alongside every
 /// new migration file.
-pub const LATEST: u32 = 2;
+pub const LATEST: u32 = 3;
 
 /// All known migrations, in ascending version order.
 ///
@@ -42,6 +42,7 @@ pub const LATEST: u32 = 2;
 const MIGRATIONS: &[(u32, &str)] = &[
     (1, include_str!("0001_init.sql")),
     (2, include_str!("0002_identity_is_bot.sql")),
+    (3, include_str!("0003_fts5_backfill_marker.sql")),
 ];
 
 /// Bring `conn` up to [`LATEST`].
@@ -265,6 +266,90 @@ mod tests {
         migrate(&mut conn).unwrap();
         let v = migrate(&mut conn).unwrap();
         assert_eq!(v, LATEST);
+    }
+
+    #[test]
+    fn migrate_0003_sets_fts5_populated_true_when_commits_empty() {
+        let mut conn = open_in_memory();
+        // Run migrations 0001 and 0002 only
+        let tx = conn.transaction().unwrap();
+        tx.execute_batch(include_str!("0001_init.sql")).unwrap();
+        tx.execute_batch(include_str!("0002_identity_is_bot.sql"))
+            .unwrap();
+        tx.commit().unwrap();
+
+        // Apply migration 0003 on empty commits table
+        let tx = conn.transaction().unwrap();
+        tx.execute_batch(include_str!("0003_fts5_backfill_marker.sql"))
+            .unwrap();
+        tx.commit().unwrap();
+
+        // Verify fts5_populated is 'true' when commits is empty
+        let fts5_populated: String = conn
+            .query_row(
+                "SELECT value FROM index_state WHERE key = 'fts5_populated'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(fts5_populated, "true");
+
+        // Verify schema_version is 3
+        let schema_version: String = conn
+            .query_row(
+                "SELECT value FROM index_state WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(schema_version, "3");
+    }
+
+    #[test]
+    fn migrate_0003_sets_fts5_populated_false_when_commits_exist() {
+        let mut conn = open_in_memory();
+        // Run migrations 0001 and 0002 only
+        let tx = conn.transaction().unwrap();
+        tx.execute_batch(include_str!("0001_init.sql")).unwrap();
+        tx.execute_batch(include_str!("0002_identity_is_bot.sql"))
+            .unwrap();
+        tx.commit().unwrap();
+
+        // Insert a commit before migration 0003
+        conn.execute(
+            "INSERT INTO commits (sha, author_name, author_email, committer_name, \
+             committer_email, authored_at, committed_at, subject, indexed_at, updated_at) \
+             VALUES ('abc123', 'Test', 'test@example.com', 'Test', 'test@example.com', \
+             1234567890, 1234567890, 'Test commit', 1234567890, 1234567890)",
+            [],
+        )
+        .unwrap();
+
+        // Apply migration 0003 with existing commits
+        let tx = conn.transaction().unwrap();
+        tx.execute_batch(include_str!("0003_fts5_backfill_marker.sql"))
+            .unwrap();
+        tx.commit().unwrap();
+
+        // Verify fts5_populated is 'false' when commits exist
+        let fts5_populated: String = conn
+            .query_row(
+                "SELECT value FROM index_state WHERE key = 'fts5_populated'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(fts5_populated, "false");
+
+        // Verify schema_version is 3
+        let schema_version: String = conn
+            .query_row(
+                "SELECT value FROM index_state WHERE key = 'schema_version'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(schema_version, "3");
     }
 
     fn sqlite_master_has_any(conn: &Connection, name: &str) -> bool {
