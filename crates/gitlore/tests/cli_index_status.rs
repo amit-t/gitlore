@@ -140,7 +140,10 @@ fn index_then_status_round_trips() {
     );
     assert_eq!(v["schema_version"].as_u64(), Some(2));
     assert_eq!(v["embeddings_enabled"].as_bool(), Some(false));
-    assert!(v["model"].is_null(), "model should be null when no embeddings setup");
+    assert!(
+        v["model"].is_null(),
+        "model should be null when no embeddings setup"
+    );
     assert!(
         v["writer_lock"].is_null(),
         "writer_lock should be null after indexer exits"
@@ -241,7 +244,10 @@ fn index_no_wait_reports_lock_contention() {
         .and_then(|_| (&lock_file).write_all(b"99999\n2026-01-01T00:00:00Z\n"));
 
     let out = run_gitlore(&repo, &["index", "--no-wait", "--json"]);
-    assert!(!out.status.success(), "--no-wait should fail under contention");
+    assert!(
+        !out.status.success(),
+        "--no-wait should fail under contention"
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     let v: Value = serde_json::from_str(stdout.trim())
         .unwrap_or_else(|e| panic!("expected JSON envelope, got `{stdout}` ({e})"));
@@ -281,8 +287,8 @@ fn status_renders_writer_lock_when_held() {
 
     let out = run_gitlore(&repo, &["status", "--json"]);
     assert!(out.status.success(), "status failed");
-    let v: Value = serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim())
-        .expect("valid JSON");
+    let v: Value =
+        serde_json::from_str(String::from_utf8_lossy(&out.stdout).trim()).expect("valid JSON");
     assert_eq!(v["writer_lock"]["pid"].as_u64(), Some(12345));
     assert!(
         v["writer_lock"]["started_at"]
@@ -335,9 +341,16 @@ fn build_perf_fixture(n_commits: usize) -> TempDir {
     run_git(root, &["add", "."]);
     run_git(root, &["commit", "--quiet", "-m", "feat: initial"]);
     for i in 1..n_commits {
-        write_file(root, "src/lib.rs", &format!("pub fn n() -> i32 {{ {i} }}\n"));
+        write_file(
+            root,
+            "src/lib.rs",
+            &format!("pub fn n() -> i32 {{ {i} }}\n"),
+        );
         run_git(root, &["add", "src/lib.rs"]);
-        run_git(root, &["commit", "--quiet", "-m", &format!("feat: bump {i}")]);
+        run_git(
+            root,
+            &["commit", "--quiet", "-m", &format!("feat: bump {i}")],
+        );
     }
     dir
 }

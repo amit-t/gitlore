@@ -359,10 +359,7 @@ impl ProgressPrinter {
                         0.0
                     };
                     let mut err = io::stderr().lock();
-                    let _ = writeln!(
-                        err,
-                        "indexed {n}/{m} ({elapsed} s elapsed, {eta:.0} s ETA)"
-                    );
+                    let _ = writeln!(err, "indexed {n}/{m} ({elapsed} s elapsed, {eta:.0} s ETA)");
                 }
             }))
         };
@@ -497,11 +494,7 @@ fn emit_status(report: &StatusReport, json: bool) {
         );
         match &report.writer_lock {
             Some(w) => {
-                let _ = writeln!(
-                    stdout,
-                    "writer_lock: pid={} since={}",
-                    w.pid, w.started_at
-                );
+                let _ = writeln!(stdout, "writer_lock: pid={} since={}", w.pid, w.started_at);
             }
             None => {
                 let _ = writeln!(stdout, "writer_lock: (none)");
@@ -580,4 +573,3 @@ impl Drop for TerminalGuard {
         let _ = self.restore();
     }
 }
-
