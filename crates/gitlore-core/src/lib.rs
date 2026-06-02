@@ -43,7 +43,5 @@ pub use config::{
     RiskConfig, RiskLabelCutoffs, RiskWeights, SearchConfig, StoryConfig, Theme, TuiConfig,
 };
 pub use log::{init_logging, LogGuard, LogLevel};
-<<<<<<< HEAD
-=======
-pub use search::{score, score_with_system_time, FilterClause, Fts5LexicalSearch, LexicalSearch, RawHit};
->>>>>>> b617339 (feat(search): add FTS5 lexical search module with query escaping and BM25 scoring)
+pub use search::lexical::{FilterClause, Fts5LexicalSearch, LexicalSearch, RawHit};
+pub use search::recency::{score, score_with_system_time};

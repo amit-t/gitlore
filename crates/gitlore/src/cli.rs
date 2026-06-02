@@ -48,6 +48,8 @@ use gitlore_core::index::status::StatusReport;
 use ratatui::{backend::CrosstermBackend, Terminal};
 use serde_json::{json, Value};
 
+pub mod search;
+
 use crate::tui::{app, App};
 
 /// `gitlore` — local-first, narrative TUI for repo intelligence.
