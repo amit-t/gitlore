@@ -40,6 +40,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1", features = ["v7"] }
 # Renders the SPEC-001 §4.3 JSON error envelope emitted by `gitlore --json`.
 serde_json = "1"
+# `gitlore classify <glob>` compiles the user-supplied pattern against
+# the same globset matcher gitlore-core's classifier uses.
+globset = "0.4"
 # Workspace tier dep — gitlore depends only on gitlore-core (ADR-005).
 gitlore-core = { path = "../gitlore-core" }
 
@@ -59,6 +62,10 @@ walkdir = "2"
 # emits and takes an advisory lock to simulate writer contention.
 serde_json = "1"
 fs2 = "0.4"
+# tests/cli_identities_classify.rs forces `is_bot = 1` on synthetic
+# dependabot identities so the --include-bots filter has something
+# real to filter (the M3-4 mailmap chain always upserts is_bot = 0).
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [lints]
 workspace = true

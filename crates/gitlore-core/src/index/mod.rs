@@ -44,6 +44,14 @@
 //!   the provider, schema, lock, identity, and classify layers into a
 //!   resumable walk + persistence pipeline with per-ref watermarks,
 //!   revert detection, force-push retention, and chunked writes.
+//! * [`identities_report`] — M3-7b read-only reader that powers
+//!   `gitlore identities`. Aggregates clustered identities with alias
+//!   counts and authored-commit counts via `SQLITE_OPEN_READ_ONLY` so
+//!   concurrent indexer writes are not contended.
+//! * [`classify_report`] — M3-7b read-only reporters that power
+//!   `gitlore classify`. Either classifies a caller-supplied path list
+//!   (the glob form) or resolves a SHA against `commits.files_changed`
+//!   and classifies the touched files (the `--explain` form).
 //!
 //! ## Wiring
 //!
@@ -54,6 +62,8 @@
 //! no-op that returns the current `schema_version`.
 
 pub mod classify;
+pub mod classify_report;
+pub mod identities_report;
 pub mod identity;
 pub mod indexer;
 pub mod lock;
